@@ -24,7 +24,7 @@ class SessionResponse(BaseModel):
 
 
 class SessionCommand(BaseModel):
-    command: Literal["approve", "modify", "cancel"]
+    command: Literal["approve", "modify", "cancel", "chat"]
     payload: dict[str, Any] | None = None
 
 

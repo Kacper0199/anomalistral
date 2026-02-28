@@ -8,21 +8,29 @@ export type SessionStatus =
   | "failed";
 
 export type SSEEventType =
-  | "status"
-  | "delta"
-  | "tool_call"
-  | "tool_result"
-  | "code_stdout"
-  | "validation"
-  | "error"
-  | "dag_update";
+  | "pipeline.started"
+  | "pipeline.completed"
+  | "pipeline.failed"
+  | "eda.started"
+  | "eda.completed"
+  | "algorithm.started"
+  | "algorithm.completed"
+  | "codegen.started"
+  | "codegen.completed"
+  | "validation.started"
+  | "validation.completed"
+  | "chat.response"
+  | "command.chat"
+  | "command.approve"
+  | "command.modify"
+  | "command.cancel";
 
 export interface SSEEvent {
   v: number;
   session_id: string;
   seq: number;
   ts: string;
-  type: SSEEventType;
+  type: string;
   payload: Record<string, unknown>;
 }
 

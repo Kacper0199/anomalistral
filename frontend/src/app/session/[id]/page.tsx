@@ -15,19 +15,63 @@ import { useSSE } from "@/hooks/useSSE";
 import { usePipelineStore } from "@/stores/pipelineStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useStreamStore } from "@/stores/streamStore";
-import type { SessionStatus, SSEEventType } from "@/types";
+import type { Session, SessionStatus } from "@/types";
 
-const statusSequence: Array<{ id: string; doneAt?: SessionStatus; runningAt?: SessionStatus }> = [
-  { id: "upload", doneAt: "eda_running" },
-  { id: "eda", doneAt: "algorithm_running", runningAt: "eda_running" },
-  { id: "algorithm", doneAt: "codegen_running", runningAt: "algorithm_running" },
-  { id: "codegen", doneAt: "validation_running", runningAt: "codegen_running" },
-  { id: "validation", doneAt: "completed", runningAt: "validation_running" },
-];
+const nodeOrder = ["upload", "eda", "algorithm", "codegen", "validation"] as const;
+type PipelineNodeId = (typeof nodeOrder)[number];
 
-function getStatusPayloadValue(payload: Record<string, unknown>, key: string): string | undefined {
+const statusProgressMap: Record<
+  Exclude<SessionStatus, "completed" | "failed">,
+  { completed: PipelineNodeId[]; running?: PipelineNodeId }
+> = {
+  created: { completed: [] },
+  eda_running: { completed: ["upload"], running: "eda" },
+  algorithm_running: { completed: ["upload", "eda"], running: "algorithm" },
+  codegen_running: { completed: ["upload", "eda", "algorithm"], running: "codegen" },
+  validation_running: { completed: ["upload", "eda", "algorithm", "codegen"], running: "validation" },
+};
+
+function getPayloadString(payload: Record<string, unknown>, key: string): string | undefined {
   const value = payload[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function getPayloadRecord(
+  payload: Record<string, unknown>,
+  key: string
+): Record<string, unknown> | undefined {
+  const value = payload[key];
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function inferFailedNode(session: Session): PipelineNodeId {
+  if (!session.eda_results) {
+    return "eda";
+  }
+  if (!session.algorithm_recommendations) {
+    return "algorithm";
+  }
+  if (!session.generated_code) {
+    return "codegen";
+  }
+  return "validation";
+}
+
+function inferCompletedNodesBeforeFailure(session: Session): PipelineNodeId[] {
+  const completed: PipelineNodeId[] = ["upload"];
+  if (session.eda_results) {
+    completed.push("eda");
+  }
+  if (session.algorithm_recommendations) {
+    completed.push("algorithm");
+  }
+  if (session.generated_code) {
+    completed.push("codegen");
+  }
+  return completed;
 }
 
 export default function SessionPage() {
@@ -46,6 +90,10 @@ export default function SessionPage() {
   const setNodeStatus = usePipelineStore((state) => state.setNodeStatus);
 
   const { connect, disconnect, isConnected } = useSSE(sessionId ?? null);
+
+  useEffect(() => {
+    processedSeqRef.current = 0;
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -73,23 +121,22 @@ export default function SessionPage() {
     resetPipeline();
 
     if (currentSession.status === "completed") {
-      statusSequence.forEach((step) => setNodeStatus(step.id, "success"));
+      nodeOrder.forEach((nodeId) => setNodeStatus(nodeId, "success"));
       return;
     }
 
     if (currentSession.status === "failed") {
-      setNodeStatus("validation", "error");
+      const completed = inferCompletedNodesBeforeFailure(currentSession);
+      completed.forEach((nodeId) => setNodeStatus(nodeId, "success"));
+      setNodeStatus(inferFailedNode(currentSession), "error");
       return;
     }
 
-    statusSequence.forEach((step) => {
-      if (step.doneAt === currentSession.status) {
-        setNodeStatus(step.id, "success");
-      }
-      if (step.runningAt === currentSession.status) {
-        setNodeStatus(step.id, "running");
-      }
-    });
+    const progress = statusProgressMap[currentSession.status];
+    progress.completed.forEach((nodeId) => setNodeStatus(nodeId, "success"));
+    if (progress.running) {
+      setNodeStatus(progress.running, "running");
+    }
   }, [currentSession, resetPipeline, setNodeStatus]);
 
   useEffect(() => {
@@ -97,55 +144,189 @@ export default function SessionPage() {
       return;
     }
 
-    const latestEvent = events[events.length - 1];
-    if (latestEvent.seq <= processedSeqRef.current) {
+    const pendingEvents = events.filter((event) => event.seq > processedSeqRef.current);
+    if (pendingEvents.length === 0) {
       return;
     }
-    processedSeqRef.current = latestEvent.seq;
 
-    if (latestEvent.type === "status" && currentSession) {
-      const statusValue = getStatusPayloadValue(latestEvent.payload, "status");
-      if (statusValue) {
-        setSession({ ...currentSession, status: statusValue as SessionStatus });
+    const updateSession = (updater: (session: Session) => Session) => {
+      const session = useSessionStore.getState().currentSession;
+      if (!session) {
+        return;
+      }
+      setSession(updater(session));
+    };
+
+    for (const event of pendingEvents) {
+      processedSeqRef.current = event.seq;
+
+      if (event.type === "pipeline.started") {
+        setNodeStatus("upload", "success");
+        updateSession((session) => ({ ...session, status: "eda_running" }));
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "Pipeline started.",
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "eda.started") {
+        setNodeStatus("eda", "running");
+        updateSession((session) => ({ ...session, status: "eda_running" }));
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "EDA analysis started...",
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "eda.completed") {
+        setNodeStatus("eda", "success");
+        const results = getPayloadRecord(event.payload, "results");
+        if (results) {
+          updateSession((session) => ({ ...session, eda_results: results }));
+        }
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "EDA analysis completed.",
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "algorithm.started") {
+        setNodeStatus("algorithm", "running");
+        updateSession((session) => ({ ...session, status: "algorithm_running" }));
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "Algorithm selection started...",
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "algorithm.completed") {
+        setNodeStatus("algorithm", "success");
+        const recommendations = getPayloadRecord(event.payload, "recommendations");
+        if (recommendations) {
+          updateSession((session) => ({ ...session, algorithm_recommendations: recommendations }));
+        }
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "Algorithm selection completed.",
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "codegen.started") {
+        setNodeStatus("codegen", "running");
+        updateSession((session) => ({ ...session, status: "codegen_running" }));
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "Code generation started...",
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "codegen.completed") {
+        setNodeStatus("codegen", "success");
+        updateSession((session) => ({ ...session, status: "validation_running" }));
+        if (sessionId) {
+          void loadSession(sessionId);
+        }
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "Code generation completed.",
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "validation.started") {
+        setNodeStatus("validation", "running");
+        updateSession((session) => ({ ...session, status: "validation_running" }));
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "Validation started...",
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "validation.completed") {
+        setNodeStatus("validation", "success");
+        const validation = getPayloadRecord(event.payload, "validation");
+        if (validation) {
+          updateSession((session) => ({ ...session, validation_results: validation }));
+        }
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "Validation completed.",
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "pipeline.completed") {
+        updateSession((session) => ({ ...session, status: "completed" }));
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: "Pipeline completed successfully.",
+          timestamp: event.ts,
+        });
+        if (sessionId) {
+          void loadSession(sessionId);
+        }
+        continue;
+      }
+
+      if (event.type === "pipeline.failed") {
+        const runningNode = nodeOrder.find((nodeId) => {
+          const node = usePipelineStore.getState().nodes.find((candidate) => candidate.id === nodeId);
+          return node?.data.status === "running";
+        });
+        setNodeStatus(runningNode ?? "validation", "error");
+        updateSession((session) => ({ ...session, status: "failed" }));
+        const errorMessage = getPayloadString(event.payload, "error") ?? "Unknown error";
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: `Pipeline failed: ${errorMessage}`,
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
+      if (event.type === "chat.response") {
+        const text = getPayloadString(event.payload, "text");
+        if (!text) {
+          continue;
+        }
+        const agent = getPayloadString(event.payload, "agent");
+        addMessage({
+          id: `${event.seq}`,
+          role: "assistant",
+          content: text,
+          agent,
+          timestamp: event.ts,
+        });
       }
     }
-
-    const messageEventTypes: SSEEventType[] = ["delta", "tool_call", "tool_result", "error", "validation"];
-    if (messageEventTypes.includes(latestEvent.type)) {
-      const content =
-        getStatusPayloadValue(latestEvent.payload, "text") ??
-        getStatusPayloadValue(latestEvent.payload, "message") ??
-        JSON.stringify(latestEvent.payload);
-      const agent = getStatusPayloadValue(latestEvent.payload, "agent");
-      addMessage({
-        id: `${latestEvent.seq}`,
-        role: "assistant",
-        content,
-        agent,
-        timestamp: latestEvent.ts,
-      });
-    }
-
-    if (latestEvent.type === "code_stdout" && currentSession) {
-      const code = getStatusPayloadValue(latestEvent.payload, "code") ?? currentSession.generated_code;
-      setSession({ ...currentSession, generated_code: code });
-    }
-
-    if (latestEvent.type === "validation" && currentSession) {
-      setSession({ ...currentSession, validation_results: latestEvent.payload });
-    }
-
-    if (latestEvent.type === "dag_update" && currentSession) {
-      setSession({ ...currentSession, dag_config: latestEvent.payload });
-    }
-
-    if (latestEvent.type === "tool_result" && currentSession) {
-      const stage = getStatusPayloadValue(latestEvent.payload, "stage");
-      if (stage === "eda") {
-        setSession({ ...currentSession, eda_results: latestEvent.payload });
-      }
-    }
-  }, [addMessage, currentSession, events, setSession]);
+  }, [addMessage, events, loadSession, sessionId, setNodeStatus, setSession]);
 
   if (!sessionId) {
     return null;

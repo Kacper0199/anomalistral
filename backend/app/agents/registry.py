@@ -19,31 +19,43 @@ class AgentRegistry:
         self._lock = asyncio.Lock()
 
     async def get_orchestrator(self) -> Any:
-        if "orchestrator" in self._agents:
-            return self._agents["orchestrator"]
+        cached = self._agents.get("orchestrator")
+        if cached is not None:
+            return cached
 
-        eda_agent = await self.get_eda_agent()
-        algorithm_agent = await self.get_algorithm_agent()
-        code_agent = await self.get_code_agent()
-        validation_agent = await self.get_validation_agent()
+        eda_agent, algorithm_agent, code_agent, validation_agent = await asyncio.gather(
+            self.get_eda_agent(),
+            self.get_algorithm_agent(),
+            self.get_code_agent(),
+            self.get_validation_agent(),
+        )
+
+        handoffs = [
+            agent_id
+            for agent_id in [
+                self._agent_id(eda_agent),
+                self._agent_id(algorithm_agent),
+                self._agent_id(code_agent),
+                self._agent_id(validation_agent),
+            ]
+            if agent_id
+        ]
 
         async with self._lock:
-            if "orchestrator" in self._agents:
-                return self._agents["orchestrator"]
+            cached = self._agents.get("orchestrator")
+            if cached is not None:
+                return cached
             orchestrator = await self._create_agent(
                 model=self.settings.MISTRAL_DEFAULT_MODEL,
                 name="anomalistral_orchestrator",
                 description="Coordinates the end-to-end anomaly detection pipeline",
                 instructions=ORCHESTRATOR_PROMPT,
-                handoffs=[
-                    {"agent_id": self._agent_id(eda_agent)},
-                    {"agent_id": self._agent_id(algorithm_agent)},
-                    {"agent_id": self._agent_id(code_agent)},
-                    {"agent_id": self._agent_id(validation_agent)},
-                ],
+                tools=[],
             )
-            self._agents["orchestrator"] = orchestrator
-            return orchestrator
+            orchestrator_id = self._agent_id(orchestrator)
+            updated_orchestrator = await self._update_handoffs(agent_id=orchestrator_id, handoffs=handoffs)
+            self._agents["orchestrator"] = updated_orchestrator
+            return updated_orchestrator
 
     async def get_eda_agent(self) -> Any:
         return await self._get_or_create_agent(
@@ -85,18 +97,56 @@ class AgentRegistry:
             tools=[{"type": "code_interpreter"}],
         )
 
-    async def _get_or_create_agent(self, key: str, **kwargs: Any) -> Any:
-        if key in self._agents:
-            return self._agents[key]
+    async def _get_or_create_agent(
+        self,
+        key: str,
+        model: str,
+        name: str,
+        description: str,
+        instructions: str,
+        tools: list[dict[str, Any]],
+    ) -> Any:
+        cached = self._agents.get(key)
+        if cached is not None:
+            return cached
+
         async with self._lock:
-            if key in self._agents:
-                return self._agents[key]
-            agent = await self._create_agent(**kwargs)
+            cached = self._agents.get(key)
+            if cached is not None:
+                return cached
+            agent = await self._create_agent(
+                model=model,
+                name=name,
+                description=description,
+                instructions=instructions,
+                tools=tools,
+            )
             self._agents[key] = agent
             return agent
 
-    async def _create_agent(self, **kwargs: Any) -> Any:
-        return await asyncio.to_thread(self.client.beta.agents.create, **kwargs)
+    async def _create_agent(
+        self,
+        model: str,
+        name: str,
+        description: str,
+        instructions: str,
+        tools: list[dict[str, Any]],
+    ) -> Any:
+        return await asyncio.to_thread(
+            self.client.beta.agents.create,
+            model=model,
+            name=name,
+            description=description,
+            instructions=instructions,
+            tools=tools,
+        )
+
+    async def _update_handoffs(self, agent_id: str, handoffs: list[str]) -> Any:
+        return await asyncio.to_thread(
+            self.client.beta.agents.update,
+            agent_id=agent_id,
+            handoffs=handoffs,
+        )
 
     def _agent_id(self, agent: Any) -> str:
         if isinstance(agent, dict):

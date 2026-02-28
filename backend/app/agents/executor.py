@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from mistralai import Mistral
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.registry import AgentRegistry
@@ -39,13 +39,21 @@ class PipelineExecutor:
 
             orchestrator = await self.registry.get_orchestrator()
             orchestrator_id = self._agent_id(orchestrator)
-            conversation_id = await self._start_conversation(orchestrator_id, user_prompt, dataset_path)
+            if not orchestrator_id:
+                raise RuntimeError("Orchestrator agent is missing id")
+
+            conversation_response = await self._start_conversation(
+                agent_id=orchestrator_id,
+                prompt=self._orchestrator_prompt(user_prompt, dataset_path),
+            )
+            conversation_id = self._conversation_id(conversation_response)
             if conversation_id:
                 await self._update_session(conversation_id=conversation_id)
 
             await self._publish("eda.started", {"session_id": self.session_id})
-            eda_raw = await self._run_phase(
-                agent=await self.registry.get_eda_agent(),
+            eda_agent_id = self._agent_id(await self.registry.get_eda_agent())
+            eda_raw = await self._run_agent_phase(
+                agent_id=eda_agent_id,
                 prompt=self._eda_prompt(user_prompt, dataset_path),
             )
             eda_data = self._to_structured_payload(eda_raw)
@@ -54,8 +62,9 @@ class PipelineExecutor:
 
             await self._set_status("algorithm_running")
             await self._publish("algorithm.started", {"session_id": self.session_id})
-            algorithm_raw = await self._run_phase(
-                agent=await self.registry.get_algorithm_agent(),
+            algorithm_agent_id = self._agent_id(await self.registry.get_algorithm_agent())
+            algorithm_raw = await self._run_agent_phase(
+                agent_id=algorithm_agent_id,
                 prompt=self._algorithm_prompt(eda_data),
             )
             algorithm_data = self._to_structured_payload(algorithm_raw)
@@ -64,8 +73,9 @@ class PipelineExecutor:
 
             await self._set_status("codegen_running")
             await self._publish("codegen.started", {"session_id": self.session_id})
-            code_output = await self._run_phase(
-                agent=await self.registry.get_code_agent(),
+            code_agent_id = self._agent_id(await self.registry.get_code_agent())
+            code_output = await self._run_agent_phase(
+                agent_id=code_agent_id,
                 prompt=self._code_prompt(eda_data, algorithm_data, dataset_path),
             )
             await self._update_session(generated_code=code_output)
@@ -74,8 +84,9 @@ class PipelineExecutor:
 
             await self._set_status("validation_running")
             await self._publish("validation.started", {"session_id": self.session_id})
-            validation_raw = await self._run_phase(
-                agent=await self.registry.get_validation_agent(),
+            validation_agent_id = self._agent_id(await self.registry.get_validation_agent())
+            validation_raw = await self._run_agent_phase(
+                agent_id=validation_agent_id,
                 prompt=self._validation_prompt(code_output, dataset_path),
             )
             validation_data = self._to_structured_payload(validation_raw)
@@ -89,69 +100,42 @@ class PipelineExecutor:
             await self._publish("pipeline.failed", {"error": str(exc)})
             raise
 
-    async def _run_phase(self, agent: Any, prompt: str) -> str:
-        agent_id = self._agent_id(agent)
-        if agent_id:
-            response_text = await self._run_agent_conversation(agent_id, prompt)
-            if response_text.strip():
-                return response_text
-        return await self._run_model_fallback(prompt)
+    async def chat(self, message: str) -> str:
+        session = await self._get_session()
+        conversation_id = session.conversation_id
+        if conversation_id is None or not conversation_id.strip():
+            raise RuntimeError("Conversation is not initialized")
 
-    async def _start_conversation(self, agent_id: str, user_prompt: str, dataset_path: str | None) -> str | None:
+        response = await self._append_conversation(conversation_id=conversation_id, message=message)
+        response_text = self._extract_conversation_text(response)
+        await self._publish("chat.response", {"text": response_text, "agent": "orchestrator"})
+        return response_text
+
+    async def _run_agent_phase(self, agent_id: str, prompt: str) -> str:
         if not agent_id:
-            return None
+            raise RuntimeError("Agent is missing id")
+        return await asyncio.to_thread(self._call_agent, agent_id, prompt)
 
-        prompt = self._orchestrator_prompt(user_prompt, dataset_path)
-
-        def run() -> Any:
-            conversations = getattr(getattr(self.client, "beta", None), "conversations", None)
-            if conversations is None:
-                return None
-            start_method = getattr(conversations, "start", None) or getattr(conversations, "create", None)
-            if start_method is None:
-                return None
-            for payload in ({"agent_id": agent_id, "inputs": prompt}, {"agent_id": agent_id, "input": prompt}):
-                try:
-                    return start_method(**payload)
-                except TypeError:
-                    continue
-            return None
-
-        response = await asyncio.to_thread(run)
-        return self._conversation_id(response)
-
-    async def _run_agent_conversation(self, agent_id: str, prompt: str) -> str:
-        def run() -> Any:
-            conversations = getattr(getattr(self.client, "beta", None), "conversations", None)
-            if conversations is None:
-                return None
-
-            if hasattr(conversations, "start"):
-                for payload in ({"agent_id": agent_id, "inputs": prompt}, {"agent_id": agent_id, "input": prompt}):
-                    try:
-                        return conversations.start(**payload)
-                    except TypeError:
-                        continue
-            if hasattr(conversations, "create"):
-                for payload in ({"agent_id": agent_id, "inputs": prompt}, {"agent_id": agent_id, "input": prompt}):
-                    try:
-                        return conversations.create(**payload)
-                    except TypeError:
-                        continue
-            return None
-
-        response = await asyncio.to_thread(run)
+    def _call_agent(self, agent_id: str, prompt: str) -> str:
+        response = self.client.agents.complete(
+            agent_id=agent_id,
+            messages=[{"role": "user", "content": prompt}],
+        )
         return self._extract_text(response)
 
-    async def _run_model_fallback(self, prompt: str) -> str:
-        def run() -> Any:
-            return self.client.chat.complete(
-                model=self.settings.MISTRAL_DEFAULT_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-            )
+    async def _start_conversation(self, agent_id: str, prompt: str) -> Any:
+        return await asyncio.to_thread(
+            self.client.beta.conversations.start,
+            agent_id=agent_id,
+            inputs=prompt,
+        )
 
-        response = await asyncio.to_thread(run)
-        return self._extract_text(response)
+    async def _append_conversation(self, conversation_id: str, message: str) -> Any:
+        return await asyncio.to_thread(
+            self.client.beta.conversations.append,
+            conversation_id=conversation_id,
+            inputs=message,
+        )
 
     async def _set_status(self, status: str) -> None:
         await self._update_session(status=status)
@@ -169,6 +153,10 @@ class PipelineExecutor:
         return session
 
     async def _publish(self, event_type: str, payload: dict[str, Any]) -> None:
+        if self.seq == 0:
+            max_seq = await self.db.scalar(select(func.max(Event.seq)).where(Event.session_id == self.session_id))
+            self.seq = int(max_seq or 0)
+
         self.seq += 1
         event = SSEEvent(
             session_id=self.session_id,
@@ -218,121 +206,56 @@ class PipelineExecutor:
             return {"raw": raw}
 
     def _extract_text(self, response: Any) -> str:
-        if response is None:
-            return ""
-        if isinstance(response, str):
-            return response
-        if isinstance(response, dict):
-            text = self._extract_text_from_dict(response)
-            return text if text else json.dumps(response, default=str)
+        content = response.choices[0].message.content or ""
+        return self._content_to_text(content)
 
-        as_dict = getattr(response, "model_dump", None)
-        if callable(as_dict):
-            dumped = as_dict()
-            text = self._extract_text_from_dict(dumped)
-            if text:
-                return text
-
-        for attr in ("output_text", "text", "content"):
-            value = getattr(response, attr, None)
-            if isinstance(value, str) and value.strip():
-                return value
-
-        message = getattr(response, "message", None)
-        if message is not None:
-            message_text = self._extract_text(message)
-            if message_text:
-                return message_text
-
-        choices = getattr(response, "choices", None)
-        if isinstance(choices, list) and choices:
-            return self._extract_text(choices[0])
-
+    def _extract_conversation_text(self, response: Any) -> str:
         outputs = getattr(response, "outputs", None)
-        if isinstance(outputs, list) and outputs:
-            for output in outputs:
-                output_text = self._extract_text(output)
-                if output_text:
-                    return output_text
+        if isinstance(response, dict):
+            outputs = response.get("outputs")
+        if not isinstance(outputs, list):
+            return ""
 
-        return str(response)
+        chunks: list[str] = []
+        for output in outputs:
+            output_type = self._get_field(output, "type")
+            if output_type and output_type != "message.output":
+                continue
+            text = self._content_to_text(self._get_field(output, "content"))
+            if text:
+                chunks.append(text)
+        return "\n".join(chunks).strip()
 
-    def _extract_text_from_dict(self, payload: dict[str, Any]) -> str:
-        for key in ("output_text", "text"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value
-
-        message = payload.get("message")
-        if isinstance(message, dict):
-            message_content = message.get("content")
-            extracted = self._extract_content(message_content)
-            if extracted:
-                return extracted
-
-        choices = payload.get("choices")
-        if isinstance(choices, list):
-            for choice in choices:
-                if isinstance(choice, dict):
-                    extracted = self._extract_text_from_dict(choice)
-                    if extracted:
-                        return extracted
-
-        outputs = payload.get("outputs")
-        if isinstance(outputs, list):
-            for output in outputs:
-                if isinstance(output, dict):
-                    output_text = self._extract_text_from_dict(output)
-                    if output_text:
-                        return output_text
-
-        content = payload.get("content")
-        return self._extract_content(content)
-
-    def _extract_content(self, content: Any) -> str:
+    def _content_to_text(self, content: Any) -> str:
         if isinstance(content, str):
-            return content
+            return content.strip()
         if isinstance(content, list):
             pieces: list[str] = []
-            for item in content:
-                if isinstance(item, str):
-                    pieces.append(item)
-                elif isinstance(item, dict):
-                    text = item.get("text")
-                    if isinstance(text, str):
-                        pieces.append(text)
+            for chunk in content:
+                text = self._get_field(chunk, "text")
+                if isinstance(text, str) and text.strip():
+                    pieces.append(text.strip())
             return "\n".join(pieces).strip()
-        if isinstance(content, dict):
-            text = content.get("text")
-            if isinstance(text, str):
-                return text
+        text = self._get_field(content, "text")
+        if isinstance(text, str):
+            return text.strip()
         return ""
 
     def _conversation_id(self, response: Any) -> str | None:
-        if response is None:
-            return None
-        if isinstance(response, dict):
-            conversation_id = response.get("id") or response.get("conversation_id")
-            if conversation_id is not None:
-                return str(conversation_id)
-            return None
-        for attr in ("id", "conversation_id"):
-            value = getattr(response, attr, None)
-            if value:
-                return str(value)
-        dumped = getattr(response, "model_dump", None)
-        if callable(dumped):
-            data = dumped()
-            if isinstance(data, dict):
-                conversation_id = data.get("id") or data.get("conversation_id")
-                if conversation_id is not None:
-                    return str(conversation_id)
+        conversation_id = self._get_field(response, "conversation_id")
+        if conversation_id:
+            return str(conversation_id)
         return None
 
     def _agent_id(self, agent: Any) -> str:
         if isinstance(agent, dict):
             return str(agent.get("id", ""))
         return str(getattr(agent, "id", ""))
+
+    def _get_field(self, value: Any, key: str) -> Any:
+        if isinstance(value, dict):
+            return value.get(key)
+        return getattr(value, key, None)
 
     def _orchestrator_prompt(self, user_prompt: str, dataset_path: str | None) -> str:
         return (

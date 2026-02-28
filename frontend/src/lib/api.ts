@@ -45,7 +45,7 @@ async function requestVoid(path: string, init?: RequestInit): Promise<void> {
 export function createSession(prompt: string): Promise<Session> {
   return request<Session>("/sessions", {
     method: "POST",
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ user_prompt: prompt }),
   });
 }
 
@@ -57,7 +57,7 @@ export async function uploadFile(file: File): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${API_URL}/upload`, {
+  const response = await fetch(`${API_URL}/uploads`, {
     method: "POST",
     body: formData,
   });
@@ -70,7 +70,7 @@ export async function uploadFile(file: File): Promise<UploadResponse> {
 }
 
 export function startPipeline(sessionId: string): Promise<void> {
-  return requestVoid(`/sessions/${sessionId}/start`, {
+  return requestVoid(`/pipelines/${sessionId}/start`, {
     method: "POST",
   });
 }

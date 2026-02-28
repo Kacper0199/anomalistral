@@ -30,10 +30,9 @@ export function useSession() {
       setSession(hydratedSession);
 
       if (uploaded) {
-        await sendCommand(session.id, "dataset_uploaded", {
-          filename: uploaded.filename,
-          path: uploaded.path,
-          size: uploaded.size,
+        await sendCommand(session.id, "modify", {
+          dataset_path: uploaded.path,
+          dataset_filename: uploaded.filename,
         });
       }
 
