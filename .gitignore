@@ -25,6 +25,8 @@ env/
 .next/
 node_modules/
 out/
+*.tsbuildinfo
+next-env.d.ts
 
 .DS_Store
 *.swp
@@ -33,3 +35,5 @@ out/
 .idea/
 .vscode/
 *.log
+*.pem
+.vercel
