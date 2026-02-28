@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     ARTIFACT_DIR: str = "./artifacts"
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
     LOG_LEVEL: str = "INFO"
+    PORT: int = 8000
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

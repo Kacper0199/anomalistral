@@ -12,6 +12,7 @@ from app.agents.registry import AgentRegistry
 from app.config import get_settings
 from app.models.database import Event, Session
 from app.models.schemas import SSEEvent
+from app.services.retry import retry_sync
 from app.services.streaming import StreamManager
 
 
@@ -31,9 +32,11 @@ class PipelineExecutor:
         self.stream_manager = stream_manager
         self.settings = get_settings()
         self.seq = 0
+        self._current_phase = "init"
 
     async def execute(self, user_prompt: str, dataset_path: str | None) -> None:
         try:
+            self._current_phase = "init"
             await self._publish("pipeline.started", {"status": "started", "session_id": self.session_id})
             await self._set_status("eda_running")
 
@@ -50,6 +53,7 @@ class PipelineExecutor:
             if conversation_id:
                 await self._update_session(conversation_id=conversation_id)
 
+            self._current_phase = "eda"
             await self._publish("eda.started", {"session_id": self.session_id})
             eda_agent_id = self._agent_id(await self.registry.get_eda_agent())
             eda_raw = await self._run_agent_phase(
@@ -60,6 +64,7 @@ class PipelineExecutor:
             await self._update_session(eda_results=json.dumps(eda_data))
             await self._publish("eda.completed", {"results": eda_data})
 
+            self._current_phase = "algorithm"
             await self._set_status("algorithm_running")
             await self._publish("algorithm.started", {"session_id": self.session_id})
             algorithm_agent_id = self._agent_id(await self.registry.get_algorithm_agent())
@@ -71,6 +76,7 @@ class PipelineExecutor:
             await self._update_session(algorithm_recommendations=json.dumps(algorithm_data))
             await self._publish("algorithm.completed", {"recommendations": algorithm_data})
 
+            self._current_phase = "codegen"
             await self._set_status("codegen_running")
             await self._publish("codegen.started", {"session_id": self.session_id})
             code_agent_id = self._agent_id(await self.registry.get_code_agent())
@@ -82,6 +88,7 @@ class PipelineExecutor:
             await self._persist_generated_code(code_output)
             await self._publish("codegen.completed", {"size": len(code_output)})
 
+            self._current_phase = "validation"
             await self._set_status("validation_running")
             await self._publish("validation.started", {"session_id": self.session_id})
             validation_agent_id = self._agent_id(await self.registry.get_validation_agent())
@@ -93,11 +100,12 @@ class PipelineExecutor:
             await self._update_session(validation_results=json.dumps(validation_data))
             await self._publish("validation.completed", {"validation": validation_data})
 
+            self._current_phase = "complete"
             await self._set_status("completed")
             await self._publish("pipeline.completed", {"status": "completed", "session_id": self.session_id})
         except Exception as exc:
             await self._set_status("failed")
-            await self._publish("pipeline.failed", {"error": str(exc)})
+            await self._publish("pipeline.failed", {"error": str(exc), "phase": self._current_phase})
             raise
 
     async def chat(self, message: str) -> str:
@@ -117,7 +125,8 @@ class PipelineExecutor:
         return await asyncio.to_thread(self._call_agent, agent_id, prompt)
 
     def _call_agent(self, agent_id: str, prompt: str) -> str:
-        response = self.client.agents.complete(
+        response = retry_sync(
+            self.client.agents.complete,
             agent_id=agent_id,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -125,6 +134,7 @@ class PipelineExecutor:
 
     async def _start_conversation(self, agent_id: str, prompt: str) -> Any:
         return await asyncio.to_thread(
+            retry_sync,
             self.client.beta.conversations.start,
             agent_id=agent_id,
             inputs=prompt,
@@ -132,6 +142,7 @@ class PipelineExecutor:
 
     async def _append_conversation(self, conversation_id: str, message: str) -> Any:
         return await asyncio.to_thread(
+            retry_sync,
             self.client.beta.conversations.append,
             conversation_id=conversation_id,
             inputs=message,

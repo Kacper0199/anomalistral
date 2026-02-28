@@ -9,6 +9,7 @@ from app.agents.prompts.eda import EDA_PROMPT
 from app.agents.prompts.orchestrator import ORCHESTRATOR_PROMPT
 from app.agents.prompts.validation import VALIDATION_PROMPT
 from app.config import get_settings
+from app.services.retry import retry_sync
 
 
 class AgentRegistry:
@@ -133,6 +134,7 @@ class AgentRegistry:
         tools: list[dict[str, Any]],
     ) -> Any:
         return await asyncio.to_thread(
+            retry_sync,
             self.client.beta.agents.create,
             model=model,
             name=name,
@@ -143,6 +145,7 @@ class AgentRegistry:
 
     async def _update_handoffs(self, agent_id: str, handoffs: list[str]) -> Any:
         return await asyncio.to_thread(
+            retry_sync,
             self.client.beta.agents.update,
             agent_id=agent_id,
             handoffs=handoffs,
