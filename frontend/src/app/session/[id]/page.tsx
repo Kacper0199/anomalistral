@@ -355,17 +355,14 @@ export default function SessionPage() {
 
   const edaResults = useMemo(
     () => currentSession?.eda_results ?? null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentSession?.eda_results],
   );
   const generatedCode = useMemo(
     () => currentSession?.generated_code ?? null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentSession?.generated_code],
   );
   const validationResults = useMemo(
     () => currentSession?.validation_results ?? null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentSession?.validation_results],
   );
 

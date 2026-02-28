@@ -1,6 +1,7 @@
 generate_sample_data.py
 sample_data.csv
 sample_data_v*.csv
+test_data*.csv
 
 test_mistral_*.py
 check_mistral_*.py
