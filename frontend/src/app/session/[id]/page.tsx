@@ -7,8 +7,10 @@ import { useParams } from "next/navigation";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { Header } from "@/components/layout/Header";
 import { PipelineEditor } from "@/components/pipeline/PipelineEditor";
+import { AnomalyChart } from "@/components/results/AnomalyChart";
 import { CodeViewer } from "@/components/results/CodeViewer";
 import { EDAReport } from "@/components/results/EDAReport";
+import { ValidationReport } from "@/components/results/ValidationReport";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/hooks/useSession";
 import { useSSE } from "@/hooks/useSSE";
@@ -87,6 +89,7 @@ export default function SessionPage() {
   const clearStream = useStreamStore((state) => state.clear);
 
   const resetPipeline = usePipelineStore((state) => state.resetPipeline);
+  const setNodeData = usePipelineStore((state) => state.setNodeData);
   const setNodeStatus = usePipelineStore((state) => state.setNodeStatus);
 
   const { connect, disconnect, isConnected } = useSSE(sessionId ?? null);
@@ -174,6 +177,7 @@ export default function SessionPage() {
 
       if (event.type === "eda.started") {
         setNodeStatus("eda", "running");
+        setNodeData("eda", { startedAt: event.ts });
         updateSession((session) => ({ ...session, status: "eda_running" }));
         addMessage({
           id: `${event.seq}`,
@@ -186,6 +190,7 @@ export default function SessionPage() {
 
       if (event.type === "eda.completed") {
         setNodeStatus("eda", "success");
+        setNodeData("eda", { completedAt: event.ts, previewData: "EDA analysis complete" });
         const results = getPayloadRecord(event.payload, "results");
         if (results) {
           updateSession((session) => ({ ...session, eda_results: results }));
@@ -201,6 +206,7 @@ export default function SessionPage() {
 
       if (event.type === "algorithm.started") {
         setNodeStatus("algorithm", "running");
+        setNodeData("algorithm", { startedAt: event.ts });
         updateSession((session) => ({ ...session, status: "algorithm_running" }));
         addMessage({
           id: `${event.seq}`,
@@ -213,6 +219,7 @@ export default function SessionPage() {
 
       if (event.type === "algorithm.completed") {
         setNodeStatus("algorithm", "success");
+        setNodeData("algorithm", { completedAt: event.ts, previewData: "Algorithm selected" });
         const recommendations = getPayloadRecord(event.payload, "recommendations");
         if (recommendations) {
           updateSession((session) => ({ ...session, algorithm_recommendations: recommendations }));
@@ -228,6 +235,7 @@ export default function SessionPage() {
 
       if (event.type === "codegen.started") {
         setNodeStatus("codegen", "running");
+        setNodeData("codegen", { startedAt: event.ts });
         updateSession((session) => ({ ...session, status: "codegen_running" }));
         addMessage({
           id: `${event.seq}`,
@@ -240,6 +248,7 @@ export default function SessionPage() {
 
       if (event.type === "codegen.completed") {
         setNodeStatus("codegen", "success");
+        setNodeData("codegen", { completedAt: event.ts, previewData: "Code generated" });
         updateSession((session) => ({ ...session, status: "validation_running" }));
         if (sessionId) {
           void loadSession(sessionId);
@@ -255,6 +264,7 @@ export default function SessionPage() {
 
       if (event.type === "validation.started") {
         setNodeStatus("validation", "running");
+        setNodeData("validation", { startedAt: event.ts });
         updateSession((session) => ({ ...session, status: "validation_running" }));
         addMessage({
           id: `${event.seq}`,
@@ -267,6 +277,7 @@ export default function SessionPage() {
 
       if (event.type === "validation.completed") {
         setNodeStatus("validation", "success");
+        setNodeData("validation", { completedAt: event.ts, previewData: "Validation complete" });
         const validation = getPayloadRecord(event.payload, "validation");
         if (validation) {
           updateSession((session) => ({ ...session, validation_results: validation }));
@@ -326,7 +337,7 @@ export default function SessionPage() {
         });
       }
     }
-  }, [addMessage, events, loadSession, sessionId, setNodeStatus, setSession]);
+  }, [addMessage, events, loadSession, sessionId, setNodeData, setNodeStatus, setSession]);
 
   if (!sessionId) {
     return null;
@@ -352,10 +363,11 @@ export default function SessionPage() {
 
         <section className="h-full min-h-[340px] rounded-xl border border-border/80 bg-card/30 p-3 xl:overflow-hidden">
           <Tabs defaultValue="eda" className="h-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="eda">EDA</TabsTrigger>
               <TabsTrigger value="code">Code</TabsTrigger>
               <TabsTrigger value="validation">Validation</TabsTrigger>
+              <TabsTrigger value="anomaly">Anomaly</TabsTrigger>
             </TabsList>
             <TabsContent value="eda" className="mt-3">
               <EDAReport results={currentSession?.eda_results ?? null} />
@@ -364,15 +376,13 @@ export default function SessionPage() {
               <CodeViewer code={currentSession?.generated_code ?? null} />
             </TabsContent>
             <TabsContent value="validation" className="mt-3">
-              {currentSession?.validation_results ? (
-                <pre className="max-h-[380px] overflow-auto rounded-lg border border-border/80 bg-muted/30 p-4 text-xs leading-relaxed">
-                  {JSON.stringify(currentSession.validation_results, null, 2)}
-                </pre>
-              ) : (
-                <div className="rounded-lg border border-dashed border-border/80 bg-muted/30 p-4 text-sm text-muted-foreground">
-                  Waiting for validation...
-                </div>
-              )}
+              <ValidationReport results={currentSession?.validation_results ?? null} />
+            </TabsContent>
+            <TabsContent value="anomaly" className="mt-3">
+              <AnomalyChart
+                edaResults={currentSession?.eda_results ?? null}
+                validationResults={currentSession?.validation_results ?? null}
+              />
             </TabsContent>
           </Tabs>
         </section>

@@ -67,6 +67,7 @@ interface PipelineStore {
   onEdgesChange: OnEdgesChange<Edge>;
   onConnect: OnConnect;
   setNodeStatus: (nodeId: string, status: PipelineNodeData["status"]) => void;
+  setNodeData: (nodeId: string, data: Partial<PipelineNodeData>) => void;
   resetPipeline: () => void;
 }
 
@@ -94,6 +95,20 @@ export const usePipelineStore = create<PipelineStore>((set) => ({
               data: {
                 ...node.data,
                 status,
+              },
+            }
+          : node
+      ),
+    })),
+  setNodeData: (nodeId, data) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                ...data,
               },
             }
           : node
