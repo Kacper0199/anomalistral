@@ -19,7 +19,13 @@ export const useSessionStore = create<SessionStore>((set) => ({
   messages: [],
   isLoading: false,
   setSession: (session) => set({ currentSession: session }),
-  addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  addMessage: (message) =>
+    set((state) => {
+      if (state.messages.some((m) => m.id === message.id)) {
+        return state;
+      }
+      return { messages: [...state.messages, message] };
+    }),
   setLoading: (isLoading) => set({ isLoading }),
   reset: () => set({ currentSession: null, messages: [], isLoading: false }),
 }));

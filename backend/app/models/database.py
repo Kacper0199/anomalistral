@@ -25,6 +25,7 @@ class Session(Base):
     dataset_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
     dataset_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     conversation_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    mistral_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     dag_config: Mapped[str | None] = mapped_column(Text, nullable=True)
     eda_results: Mapped[str | None] = mapped_column(Text, nullable=True)
     algorithm_recommendations: Mapped[str | None] = mapped_column(Text, nullable=True)

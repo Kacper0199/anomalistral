@@ -12,7 +12,6 @@ export function useSSE(sessionId: string | null) {
   const abortRef = useRef<AbortController | null>(null);
   const addEvent = useStreamStore((state) => state.addEvent);
   const isConnected = useStreamStore((state) => state.isConnected);
-  const lastSeq = useStreamStore((state) => state.lastSeq);
   const setConnected = useStreamStore((state) => state.setConnected);
 
   const disconnect = useCallback(() => {
@@ -31,12 +30,14 @@ export function useSSE(sessionId: string | null) {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const seq = useStreamStore.getState().lastSeq;
+
     void fetchEventSource(`${API_URL}/stream/${sessionId}`, {
       method: "GET",
       signal: controller.signal,
       openWhenHidden: true,
       headers: {
-        ...(lastSeq > 0 ? { "Last-Event-ID": String(lastSeq) } : {}),
+        ...(seq > 0 ? { "Last-Event-ID": String(seq) } : {}),
       },
       onopen: async (response) => {
         if (!response.ok) {
@@ -72,7 +73,7 @@ export function useSSE(sessionId: string | null) {
       }
       setConnected(false);
     });
-  }, [addEvent, lastSeq, sessionId, setConnected]);
+  }, [addEvent, sessionId, setConnected]);
 
   return {
     connect,

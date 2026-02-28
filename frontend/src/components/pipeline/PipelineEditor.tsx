@@ -41,7 +41,12 @@ export function PipelineEditor() {
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={18} size={1} color="var(--border)" />
-          <MiniMap zoomable pannable className="!bg-background/90" />
+          <MiniMap
+            zoomable={false}
+            pannable={false}
+            className="!bg-background/90"
+            style={{ width: 120, height: 80 }}
+          />
           <Controls className="!border-border !bg-background/90" />
         </ReactFlow>
       </div>
