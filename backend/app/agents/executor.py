@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,13 @@ from app.services.streaming import StreamManager
 
 MAX_DATASET_CONTEXT_ROWS = 5
 MAX_DATASET_CONTEXT_COLS = 40
+
+
+def _extract_code_block(text: str) -> str:
+    matches = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.DOTALL)
+    if matches:
+        return max(matches, key=len).strip()
+    return text.strip()
 
 
 def _build_dataset_context(dataset_path: str) -> str:
@@ -108,10 +116,13 @@ class PipelineExecutor:
             self._current_phase = "eda"
             await self._publish("eda.started", {"session_id": self.session_id})
             eda_agent_id = self._agent_id(await self.registry.get_eda_agent())
-            eda_raw, conversation_id = await self._run_agent_phase(
-                agent_id=eda_agent_id,
-                prompt=self._eda_prompt(user_prompt, dataset_context),
-                file_id=file_id,
+            eda_raw, conversation_id = await asyncio.wait_for(
+                self._run_agent_phase(
+                    agent_id=eda_agent_id,
+                    prompt=self._eda_prompt(user_prompt, dataset_context),
+                    file_id=file_id,
+                ),
+                timeout=120.0,
             )
             if conversation_id:
                 await self._update_session(conversation_id=conversation_id)
@@ -123,9 +134,12 @@ class PipelineExecutor:
             await self._set_status("algorithm_running")
             await self._publish("algorithm.started", {"session_id": self.session_id})
             algorithm_agent_id = self._agent_id(await self.registry.get_algorithm_agent())
-            algorithm_raw, _ = await self._run_agent_phase(
-                agent_id=algorithm_agent_id,
-                prompt=self._algorithm_prompt(eda_data),
+            algorithm_raw, _ = await asyncio.wait_for(
+                self._run_agent_phase(
+                    agent_id=algorithm_agent_id,
+                    prompt=self._algorithm_prompt(eda_data),
+                ),
+                timeout=120.0,
             )
             algorithm_data = self._to_structured_payload(algorithm_raw)
             await self._update_session(algorithm_recommendations=json.dumps(algorithm_data))
@@ -135,11 +149,15 @@ class PipelineExecutor:
             await self._set_status("codegen_running")
             await self._publish("codegen.started", {"session_id": self.session_id})
             code_agent_id = self._agent_id(await self.registry.get_code_agent())
-            code_output, _ = await self._run_agent_phase(
-                agent_id=code_agent_id,
-                prompt=self._code_prompt(eda_data, algorithm_data, dataset_context),
-                file_id=file_id,
+            code_output, _ = await asyncio.wait_for(
+                self._run_agent_phase(
+                    agent_id=code_agent_id,
+                    prompt=self._code_prompt(eda_data, algorithm_data, dataset_context),
+                    file_id=file_id,
+                ),
+                timeout=120.0,
             )
+            code_output = _extract_code_block(code_output)
             await self._update_session(generated_code=code_output)
             await self._persist_generated_code(code_output)
             await self._publish("codegen.completed", {"size": len(code_output)})
@@ -148,10 +166,13 @@ class PipelineExecutor:
             await self._set_status("validation_running")
             await self._publish("validation.started", {"session_id": self.session_id})
             validation_agent_id = self._agent_id(await self.registry.get_validation_agent())
-            validation_raw, _ = await self._run_agent_phase(
-                agent_id=validation_agent_id,
-                prompt=self._validation_prompt(code_output, dataset_context),
-                file_id=file_id,
+            validation_raw, _ = await asyncio.wait_for(
+                self._run_agent_phase(
+                    agent_id=validation_agent_id,
+                    prompt=self._validation_prompt(code_output, dataset_context),
+                    file_id=file_id,
+                ),
+                timeout=120.0,
             )
             validation_data = self._to_structured_payload(validation_raw)
             await self._update_session(validation_results=json.dumps(validation_data))
@@ -343,8 +364,9 @@ class PipelineExecutor:
             f"User intent: {user_prompt}.{ctx} "
             "The dataset file is attached via code_interpreter — load it with "
             "pandas from the sandbox working directory. "
-            "Return a strict JSON object with keys: summary, frequency, missing_values, trend, seasonality, "
-            "stationarity, statistics, notes."
+            "Return a strict JSON object with keys: row_count, column_count, summary, frequency, missing_values, "
+            "trend, seasonality, stationarity, statistics (per-column: mean, std, min, max, missing, dtype), "
+            "column_types, data_quality_flags, notes."
         )
 
     def _algorithm_prompt(self, eda_data: dict[str, Any]) -> str:
@@ -370,6 +392,6 @@ class PipelineExecutor:
         return (
             "Validate anomaly detection outputs statistically. "
             f"The dataset file is attached via code_interpreter — load it from the sandbox.{ctx} "
-            f"Generated code: {code_output[:8000]}. "
+            f"Generated code: {_extract_code_block(code_output)[:8000]}. "
             "Return strict JSON with keys: metrics, diagnostics, confidence, caveats, recommendation."
         )

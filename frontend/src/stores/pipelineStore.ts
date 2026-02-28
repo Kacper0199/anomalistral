@@ -21,31 +21,31 @@ function createDefaultNodes(): PipelineFlowNode[] {
     {
       id: "upload",
       type: "pipelineNode",
-      position: { x: 40, y: 100 },
+      position: { x: 0, y: 100 },
       data: { label: "Upload", status: "idle", type: "upload" },
     },
     {
       id: "eda",
       type: "pipelineNode",
-      position: { x: 300, y: 100 },
+      position: { x: 320, y: 100 },
       data: { label: "EDA", status: "idle", type: "eda" },
     },
     {
       id: "algorithm",
       type: "pipelineNode",
-      position: { x: 560, y: 100 },
+      position: { x: 640, y: 100 },
       data: { label: "Algorithm Selection", status: "idle", type: "algorithm" },
     },
     {
       id: "codegen",
       type: "pipelineNode",
-      position: { x: 820, y: 100 },
+      position: { x: 960, y: 100 },
       data: { label: "Code Generation", status: "idle", type: "codegen" },
     },
     {
       id: "validation",
       type: "pipelineNode",
-      position: { x: 1080, y: 100 },
+      position: { x: 1280, y: 100 },
       data: { label: "Validation", status: "idle", type: "validation" },
     },
   ];

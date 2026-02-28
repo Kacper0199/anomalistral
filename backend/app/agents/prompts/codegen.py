@@ -6,4 +6,4 @@ Code must include data loading, preprocessing, feature engineering when needed, 
 
 Use code_interpreter to execute and verify behavior against available data. If execution fails, analyze the error and repair the code up to three retries.
 
-Return only executable Python code with no markdown wrappers."""
+Return ONLY executable Python code. Do NOT wrap in markdown code fences. Do NOT include any explanation text before or after the code. Start directly with import statements."""

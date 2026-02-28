@@ -13,13 +13,23 @@ interface CodeViewerProps {
   code: string | null;
 }
 
+function extractCodeBlock(raw: string): string {
+  const matches = [...raw.matchAll(/```(?:python)?\s*\n([\s\S]*?)```/g)];
+  if (matches.length > 0) {
+    return matches.reduce((a, b) => (a[1].length >= b[1].length ? a : b))[1].trim();
+  }
+  return raw.trim();
+}
+
 export function CodeViewer({ code }: CodeViewerProps) {
   const [highlightedHtml, setHighlightedHtml] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const cleanCode = code ? extractCodeBlock(code) : null;
+
   useEffect(() => {
-    if (!code) {
+    if (!cleanCode) {
       return;
     }
 
@@ -27,7 +37,7 @@ export function CodeViewer({ code }: CodeViewerProps) {
 
     const highlight = async () => {
       try {
-        const html = await codeToHtml(code, {
+        const html = await codeToHtml(cleanCode, {
           lang: "python",
           theme: "github-dark",
         });
@@ -48,7 +58,7 @@ export function CodeViewer({ code }: CodeViewerProps) {
     return () => {
       isMounted = false;
     };
-  }, [code]);
+  }, [cleanCode]);
 
   useEffect(() => {
     return () => {
@@ -59,12 +69,12 @@ export function CodeViewer({ code }: CodeViewerProps) {
   }, []);
 
   const handleCopy = async () => {
-    if (!code) {
+    if (!cleanCode) {
       return;
     }
 
     try {
-      await navigator.clipboard.writeText(code);
+      await navigator.clipboard.writeText(cleanCode);
       setCopied(true);
 
       if (copiedTimeoutRef.current) {
@@ -82,11 +92,11 @@ export function CodeViewer({ code }: CodeViewerProps) {
   };
 
   const handleDownload = () => {
-    if (!code) {
+    if (!cleanCode) {
       return;
     }
 
-    const blob = new Blob([code], { type: "text/x-python;charset=utf-8" });
+    const blob = new Blob([cleanCode], { type: "text/x-python;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -128,8 +138,8 @@ export function CodeViewer({ code }: CodeViewerProps) {
         {highlightedHtml ? (
           <div dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
         ) : (
-          <pre className="rounded-lg p-4 text-sm leading-6 text-zinc-100">
-            <code>{code}</code>
+          <pre className="rounded-lg p-4 text-sm leading-6 text-zinc-100 break-words">
+            <code>{cleanCode}</code>
           </pre>
         )}
       </div>
