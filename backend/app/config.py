@@ -9,8 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     MISTRAL_API_KEY: str
     MISTRAL_DEFAULT_MODEL: str = "mistral-large-latest"
-    MISTRAL_CODE_MODEL: str = "mistral-large-latest"
-    MISTRAL_SMALL_MODEL: str = "mistral-small-latest"
+    MISTRAL_SMALL_MODEL: str = "ministral-8b-latest"
     DATABASE_URL: str = "sqlite+aiosqlite:///./anomalistral.db"
     UPLOAD_DIR: str = "./uploads"
     ARTIFACT_DIR: str = "./artifacts"

@@ -2,8 +2,6 @@
 
 import {
   Background,
-  Controls,
-  MiniMap,
   ReactFlow,
   ReactFlowProvider,
   type Edge,
@@ -37,17 +35,10 @@ export function PipelineEditor() {
           onConnect={onConnect}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.2 }}
+          fitViewOptions={{ padding: 0.3 }}
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={18} size={1} color="var(--border)" />
-          <MiniMap
-            zoomable={false}
-            pannable={false}
-            className="!bg-background/90"
-            style={{ width: 120, height: 80 }}
-          />
-          <Controls className="!border-border !bg-background/90" />
         </ReactFlow>
       </div>
     </ReactFlowProvider>

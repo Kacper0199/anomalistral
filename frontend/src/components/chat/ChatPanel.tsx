@@ -105,7 +105,7 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
                       <Separator className="flex-1 bg-border/60" />
                       <div className="inline-flex max-w-[85%] items-center gap-2 rounded-full border border-border/70 bg-muted/30 px-3 py-1 text-[11px] italic text-muted-foreground">
                         <Cpu className="size-3 shrink-0" />
-                        <span className="truncate">{message.content}</span>
+                        <span className="break-words min-w-0">{message.content}</span>
                         <span className="whitespace-nowrap text-[10px] not-italic text-muted-foreground/80">
                           {relativeTime}
                         </span>

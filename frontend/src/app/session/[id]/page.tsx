@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { useParams } from "next/navigation";
 
@@ -125,30 +125,36 @@ export default function SessionPage() {
   }, [sessionId]);
 
   useEffect(() => {
-    if (!currentSession) {
+    resetPipeline();
+  }, [sessionId, resetPipeline]);
+
+  const sessionStatus = currentSession?.status;
+  useEffect(() => {
+    if (!sessionStatus) {
       return;
     }
-
-    resetPipeline();
-
-    if (currentSession.status === "completed") {
+    if (sessionStatus === "completed") {
       nodeOrder.forEach((nodeId) => setNodeStatus(nodeId, "success"));
       return;
     }
-
-    if (currentSession.status === "failed") {
-      const completed = inferCompletedNodesBeforeFailure(currentSession);
-      completed.forEach((nodeId) => setNodeStatus(nodeId, "success"));
-      setNodeStatus(inferFailedNode(currentSession), "error");
+    if (sessionStatus === "failed") {
+      const session = useSessionStore.getState().currentSession;
+      if (!session) {
+        return;
+      }
+      inferCompletedNodesBeforeFailure(session).forEach((nodeId) => setNodeStatus(nodeId, "success"));
+      setNodeStatus(inferFailedNode(session), "error");
       return;
     }
-
-    const progress = statusProgressMap[currentSession.status];
+    const progress = statusProgressMap[sessionStatus];
+    if (!progress) {
+      return;
+    }
     progress.completed.forEach((nodeId) => setNodeStatus(nodeId, "success"));
     if (progress.running) {
       setNodeStatus(progress.running, "running");
     }
-  }, [currentSession, resetPipeline, setNodeStatus]);
+  }, [sessionStatus, setNodeStatus]);
 
   useEffect(() => {
     if (events.length === 0) {
@@ -347,6 +353,19 @@ export default function SessionPage() {
     }
   }, [addMessage, events, loadSession, sessionId, setNodeData, setNodeStatus, setSession]);
 
+  const edaResults = useMemo(
+    () => currentSession?.eda_results ?? null,
+    [currentSession?.eda_results],
+  );
+  const generatedCode = useMemo(
+    () => currentSession?.generated_code ?? null,
+    [currentSession?.generated_code],
+  );
+  const validationResults = useMemo(
+    () => currentSession?.validation_results ?? null,
+    [currentSession?.validation_results],
+  );
+
   if (!sessionId) {
     return null;
   }
@@ -387,24 +406,24 @@ export default function SessionPage() {
             </TabsList>
             <TabsContent value="eda" className="mt-3 min-h-0 flex-1 overflow-y-auto">
               <ErrorBoundary fallback={<PanelError message="EDA report failed to render" />}>
-                <EDAReport results={currentSession.eda_results ?? null} />
+                <EDAReport results={edaResults} />
               </ErrorBoundary>
             </TabsContent>
             <TabsContent value="code" className="mt-3 min-h-0 flex-1 overflow-y-auto">
               <ErrorBoundary fallback={<PanelError message="Code viewer failed to render" />}>
-                <CodeViewer code={currentSession.generated_code ?? null} />
+                <CodeViewer code={generatedCode} />
               </ErrorBoundary>
             </TabsContent>
             <TabsContent value="validation" className="mt-3 min-h-0 flex-1 overflow-y-auto">
               <ErrorBoundary fallback={<PanelError message="Validation report failed to render" />}>
-                <ValidationReport results={currentSession.validation_results ?? null} />
+                <ValidationReport results={validationResults} sessionStatus={currentSession.status} />
               </ErrorBoundary>
             </TabsContent>
             <TabsContent value="anomaly" className="mt-3 min-h-0 flex-1 overflow-y-auto">
               <ErrorBoundary fallback={<PanelError message="Anomaly chart failed to render" />}>
                 <AnomalyChart
-                  edaResults={currentSession.eda_results ?? null}
-                  validationResults={currentSession.validation_results ?? null}
+                  edaResults={edaResults}
+                  validationResults={validationResults}
                 />
               </ErrorBoundary>
             </TabsContent>

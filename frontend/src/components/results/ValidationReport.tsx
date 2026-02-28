@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 
 interface ValidationReportProps {
   results: Record<string, unknown> | null;
+  sessionStatus?: string;
 }
 
 type CheckStatus = "pass" | "fail" | "warning";
@@ -320,8 +321,15 @@ function getCheckVisual(status: CheckStatus): {
   };
 }
 
-export function ValidationReport({ results }: ValidationReportProps) {
+export function ValidationReport({ results, sessionStatus }: ValidationReportProps) {
   if (!results) {
+    if (sessionStatus === "failed") {
+      return (
+        <div className="rounded-lg border border-dashed border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-300">
+          Validation did not complete — pipeline failed before this stage.
+        </div>
+      );
+    }
     return (
       <div className="rounded-lg border border-dashed border-border/80 bg-muted/30 p-4 text-sm text-muted-foreground">
         Waiting for validation...

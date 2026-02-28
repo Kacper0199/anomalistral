@@ -125,10 +125,18 @@ const getOverview = (results: UnknownRecord): OverviewData => {
       ? toText(getValue(summaryValue, ["summary", "text", "description", "details"]))
       : null);
 
-  const rowCount = toNumber(getValue(results, ["row_count", "rows", "rowCount", "total_rows"]));
-  const columnCount = toNumber(
-    getValue(results, ["column_count", "columns", "columnCount", "total_columns"]),
-  );
+  const stats = getRecord(results, ["statistics", "stats"]);
+
+  let rowCount = toNumber(getValue(results, ["row_count", "rows", "rowCount", "total_rows"]));
+  if (rowCount === null && stats) {
+    rowCount = toNumber(getValue(stats, ["rows", "row_count", "num_rows", "total_rows"]));
+  }
+
+  let columnCount = toNumber(getValue(results, ["column_count", "columns", "columnCount", "total_columns"]));
+  if (columnCount === null && stats) {
+    const colsVal = getValue(stats, ["columns", "column_count", "num_columns", "total_columns"]);
+    columnCount = Array.isArray(colsVal) ? colsVal.length : toNumber(colsVal);
+  }
 
   return { rowCount, columnCount, summary };
 };
@@ -185,7 +193,7 @@ const parseQualityFlag = (label: string, value: unknown): QualityFlag | null => 
 };
 
 const getQualityFlags = (results: UnknownRecord): QualityFlag[] => {
-  const qualityRecord = getRecord(results, ["data_quality", "quality", "quality_flags", "quality_metrics"]);
+  const qualityRecord = getRecord(results, ["data_quality_flags", "data_quality", "quality", "quality_flags", "quality_metrics"]);
   const source =
     qualityRecord ??
     Object.fromEntries(
@@ -193,9 +201,16 @@ const getQualityFlags = (results: UnknownRecord): QualityFlag[] => {
     );
 
   return Object.entries(source)
-    .map(([key, value]) => parseQualityFlag(key, value))
+    .flatMap(([key, value]) => {
+      if (isRecord(value)) {
+        return Object.entries(value).map(([subKey, subValue]) =>
+          parseQualityFlag(`${prettyLabel(key)} ${prettyLabel(subKey)}`, subValue),
+        );
+      }
+      return [parseQualityFlag(key, value)];
+    })
     .filter((flag): flag is QualityFlag => flag !== null)
-    .slice(0, 10);
+    .slice(0, 12);
 };
 
 const getStatsRows = (results: UnknownRecord, statsSource: UnknownRecord): StatsRow[] => {
@@ -214,7 +229,7 @@ const getStatsRows = (results: UnknownRecord, statsSource: UnknownRecord): Stats
     const type =
       (record ? toText(getValue(record, ["type", "dtype", "data_type"])) : null) ??
       (columnTypes ? toText(columnTypes[column]) : null) ??
-      "unknown";
+      (mean !== null || std !== null ? "numeric" : "categorical");
 
     return { column, type, mean, std, min, max, missing };
   });
