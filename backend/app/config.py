@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./anomalistral.db"
     UPLOAD_DIR: str = "./uploads"
     ARTIFACT_DIR: str = "./artifacts"
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"]
     LOG_LEVEL: str = "INFO"
     PORT: int = 8000
 
