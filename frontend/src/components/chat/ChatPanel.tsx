@@ -46,7 +46,13 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const frame = requestAnimationFrame(() => {
+      try {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      } catch {}
+    });
+
+    return () => cancelAnimationFrame(frame);
   }, [messages.length]);
 
   const handleSend = async () => {

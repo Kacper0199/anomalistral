@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/table";
 
 interface EDAReportProps {
-  results: Record<string, unknown> | null;
+  results: Record<string, unknown> | string | null;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -242,8 +242,32 @@ const badgeToneClass: Record<QualityTone, string> = {
   neutral: "border-border/70 bg-muted/40 text-muted-foreground",
 };
 
-export function EDAReport({ results }: EDAReportProps) {
+export function EDAReport({ results: rawResults }: EDAReportProps) {
   const [metricPreference, setMetricPreference] = useState<"missing" | "mean">("missing");
+
+  const results = useMemo((): Record<string, unknown> | null => {
+    if (!rawResults) {
+      return null;
+    }
+
+    if (typeof rawResults === "string") {
+      try {
+        const parsed = JSON.parse(rawResults);
+        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+        return { data: parsed };
+      } catch {
+        return { raw: rawResults };
+      }
+    }
+
+    if (typeof rawResults === "object" && !Array.isArray(rawResults)) {
+      return rawResults;
+    }
+
+    return { data: rawResults };
+  }, [rawResults]);
 
   if (!results) {
     return (

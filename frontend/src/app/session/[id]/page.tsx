@@ -379,7 +379,7 @@ export default function SessionPage() {
       <Header status={currentSession.status} />
       <main className="mx-auto grid h-[calc(100vh-4rem)] w-full max-w-[1800px] grid-cols-1 gap-4 p-4 md:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)_420px]">
         <section className="min-h-[340px] md:h-full">
-          <ErrorBoundary fallback={<PanelError message="Chat panel crashed" />}>
+          <ErrorBoundary key={sessionId} fallback={<PanelError message="Chat panel crashed" />}>
             <ChatPanel sessionId={sessionId} />
           </ErrorBoundary>
         </section>
@@ -405,22 +405,22 @@ export default function SessionPage() {
               <TabsTrigger value="anomaly">Anomaly</TabsTrigger>
             </TabsList>
             <TabsContent value="eda" className="mt-3 min-h-0 flex-1 overflow-y-auto">
-              <ErrorBoundary fallback={<PanelError message="EDA report failed to render" />}>
+              <ErrorBoundary key={edaResults ? "eda-loaded" : "eda-pending"} fallback={<PanelError message="EDA report failed to render" />}>
                 <EDAReport results={edaResults} />
               </ErrorBoundary>
             </TabsContent>
             <TabsContent value="code" className="mt-3 min-h-0 flex-1 overflow-y-auto">
-              <ErrorBoundary fallback={<PanelError message="Code viewer failed to render" />}>
+              <ErrorBoundary key={generatedCode ? "code-loaded" : "code-pending"} fallback={<PanelError message="Code viewer failed to render" />}>
                 <CodeViewer code={generatedCode} />
               </ErrorBoundary>
             </TabsContent>
             <TabsContent value="validation" className="mt-3 min-h-0 flex-1 overflow-y-auto">
-              <ErrorBoundary fallback={<PanelError message="Validation report failed to render" />}>
+              <ErrorBoundary key={validationResults ? "val-loaded" : "val-pending"} fallback={<PanelError message="Validation report failed to render" />}>
                 <ValidationReport results={validationResults} sessionStatus={currentSession.status} />
               </ErrorBoundary>
             </TabsContent>
             <TabsContent value="anomaly" className="mt-3 min-h-0 flex-1 overflow-y-auto">
-              <ErrorBoundary fallback={<PanelError message="Anomaly chart failed to render" />}>
+              <ErrorBoundary key={edaResults && validationResults ? "anomaly-loaded" : "anomaly-pending"} fallback={<PanelError message="Anomaly chart failed to render" />}>
                 <AnomalyChart
                   edaResults={edaResults}
                   validationResults={validationResults}
