@@ -126,11 +126,11 @@ class PipelineExecutor:
 
     def _call_agent(self, agent_id: str, prompt: str) -> str:
         response = retry_sync(
-            self.client.agents.complete,
+            self.client.beta.conversations.start,
             agent_id=agent_id,
-            messages=[{"role": "user", "content": prompt}],
+            inputs=prompt,
         )
-        return self._extract_text(response)
+        return self._extract_conversation_text(response)
 
     async def _start_conversation(self, agent_id: str, prompt: str) -> Any:
         return await asyncio.to_thread(

@@ -81,7 +81,7 @@ class AgentRegistry:
     async def get_code_agent(self) -> Any:
         return await self._get_or_create_agent(
             key="code",
-            model=self.settings.MISTRAL_CODE_MODEL,
+            model=self.settings.MISTRAL_DEFAULT_MODEL,
             name="anomalistral_codegen",
             description="Generates and tests anomaly detection pipeline code",
             instructions=CODEGEN_PROMPT,
