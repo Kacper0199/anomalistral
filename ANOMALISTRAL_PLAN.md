@@ -37,23 +37,21 @@ graph TB
         EXEC[Pipeline Executor]
     end
 
-    subgraph Agents["Mistral Agents API · Multi-Agent Swarm"]
-        ORC[Orchestrator Agent<br/>Mistral Large 3]
-        INTRO[Intro / EDA Agent<br/>Mistral Large 3]
-        ARCH[Pipeline Architect Agent<br/>Mistral Large 3]
-        ALGO[Algorithm Selection Agent<br/>Magistral Medium 1.2]
-        CODE[Implementation Agent<br/>Devstral 2]
-        VAL[Validation Agent<br/>Mistral Small 3.1]
-        DEPLOY[Deployment Agent<br/>Mistral Small 3.1]
+    subgraph Agents["Mistral Agents API · Sequential Pipeline"]
+        EDA_A[EDA Agent<br/>mistral-large-latest<br/>+ code_interpreter]
+        ALGO_A[Algorithm Agent<br/>mistral-small-latest]
+        CODE_A[Code Agent<br/>mistral-large-latest<br/>+ code_interpreter]
+        VAL_A[Validation Agent<br/>mistral-large-latest<br/>+ code_interpreter]
     end
 
     subgraph Storage["Storage Layer"]
         DB[(SQLite)]
         FS[File System<br/>uploads / artifacts]
+        MF[Mistral Files API]
     end
 
     subgraph Execution["Code Execution"]
-        CI[Mistral code_interpreter]
+        CI[Mistral code_interpreter<br/>sandboxed]
     end
 
     UI -->|chat / commands| API
@@ -63,15 +61,17 @@ graph TB
     WS -->|stream events| UI
     WS -->|stream events| DAG
     SM --> EXEC
-    EXEC --> ORC
-    ORC -->|handoff| INTRO
-    ORC -->|handoff| ARCH
-    ORC -->|handoff| ALGO
-    ORC -->|handoff| CODE
-    ORC -->|handoff| VAL
-    ORC -->|handoff| DEPLOY
-    CODE --> CI
-    VAL --> CI
+    EXEC -->|conversations.start| EDA_A
+    EXEC -->|conversations.start| ALGO_A
+    EXEC -->|conversations.start| CODE_A
+    EXEC -->|conversations.start| VAL_A
+    EDA_A --> CI
+    CODE_A --> CI
+    VAL_A --> CI
+    EXEC -->|files.upload| MF
+    MF -->|ToolFileChunk| EDA_A
+    MF -->|ToolFileChunk| CODE_A
+    MF -->|ToolFileChunk| VAL_A
     EXEC --> DB
     EXEC --> FS
     DASH --> API
@@ -84,40 +84,38 @@ sequenceDiagram
     participant U as User
     participant FE as Frontend
     participant BE as Backend
-    participant ORC as Orchestrator
-    participant INTRO as Intro Agent
-    participant ALGO as Algorithm Agent
-    participant CODE as Code Agent
-    participant VAL as Validation Agent
+    participant MF as Mistral Files API
+    participant EDA_A as EDA Agent
+    participant ALGO_A as Algorithm Agent
+    participant CODE_A as Code Agent
+    participant VAL_A as Validation Agent
     participant CI as code_interpreter
 
     U->>FE: Upload CSV + describe goal
-    FE->>BE: POST /api/sessions (file + prompt)
-    BE->>ORC: Start conversation
-    ORC->>INTRO: Handoff → EDA
-    INTRO->>CI: Run EDA code
-    CI-->>INTRO: Stats, plots, seasonality
-    INTRO-->>BE: EDA report (streamed)
-    BE-->>FE: SSE events (status, results)
+    FE->>BE: POST /api/uploads (file) + POST /api/sessions (prompt)
+    BE->>MF: files.upload(purpose=code_interpreter)
+    MF-->>BE: file_id
 
-    ORC->>ALGO: Handoff → Select algorithms
-    ALGO-->>BE: Ranked algorithm list
-    BE-->>FE: Algorithm recommendations
+    BE->>EDA_A: conversations.start (ToolFileChunk + prompt)
+    EDA_A->>CI: Run EDA code in sandbox
+    CI-->>EDA_A: Stats, seasonality, quality
+    EDA_A-->>BE: EDA report (message.output)
+    BE-->>FE: SSE events (eda.started → eda.completed)
 
-    U->>FE: Approve / modify DAG
-    FE->>BE: POST /api/sessions/:id/dag
+    BE->>ALGO_A: conversations.start (EDA JSON)
+    ALGO_A-->>BE: Ranked algorithm list
+    BE-->>FE: SSE events (algorithm.started → algorithm.completed)
 
-    ORC->>CODE: Handoff → Generate code
-    CODE->>CI: Execute & test
-    CI-->>CODE: Output / errors
-    CODE->>CODE: Self-debug loop (max 3)
-    CODE-->>BE: Final code artifact
-    BE-->>FE: Code + results streamed
+    BE->>CODE_A: conversations.start (ToolFileChunk + EDA + algo JSON)
+    CODE_A->>CI: Execute & test code in sandbox
+    CI-->>CODE_A: Output / errors
+    CODE_A-->>BE: Final code artifact
+    BE-->>FE: SSE events (codegen.started → codegen.completed)
 
-    ORC->>VAL: Handoff → Validate
-    VAL->>CI: Statistical validation
-    VAL-->>BE: Validation report
-    BE-->>FE: Pass/fail + metrics
+    BE->>VAL_A: conversations.start (ToolFileChunk + code + context)
+    VAL_A->>CI: Statistical validation in sandbox
+    VAL_A-->>BE: Validation report
+    BE-->>FE: SSE events (validation.started → validation.completed)
 ```
 
 ---
@@ -147,19 +145,18 @@ sequenceDiagram
 | **SSE Client** | @microsoft/fetch-event-source | Robust reconnection, POST method support |
 | **Charts** | Recharts or Plotly.js | Time-series visualization for EDA results and anomaly overlay |
 
-### 3.3 Mistral Models Assignment
+### 3.3 Mistral Models Assignment (Actual Implementation)
 
 | Agent | Model | Why |
 |-------|-------|-----|
-| Orchestrator | `mistral-large-latest` | Complex routing, handoff decisions, conversation management |
-| Intro / EDA | `mistral-large-latest` | Data understanding requires strong reasoning |
-| Pipeline Architect | `mistral-large-latest` | DAG design requires architectural reasoning |
-| Algorithm Selection | `mistral-large-latest` | Deep ML knowledge for algorithm matching |
-| Code Generation | `codestral-latest` or `devstral-latest` | Optimized for code output |
-| Validation | `mistral-small-latest` | Structured validation tasks, cheaper |
-| Deployment | `mistral-small-latest` | Template-based outputs, cheaper |
+| EDA | `mistral-large-latest` | Data understanding requires strong reasoning + code_interpreter |
+| Algorithm Selection | `mistral-small-latest` | Structured recommendation task, cheaper |
+| Code Generation | `mistral-large-latest` | `codestral-latest` does NOT support code_interpreter; must use large + code_interpreter |
+| Validation | `mistral-large-latest` | Statistical validation requires strong reasoning + code_interpreter |
 
-> **Budget note**: €15/month cap, 6 req/sec. Strategy: Use `mistral-small-latest` wherever possible, reserve `mistral-large-latest` for orchestration and complex reasoning. Cache intermediate results aggressively.
+> **Budget note**: €15/month cap, 6 req/sec. Strategy: Use `mistral-small-latest` for the algorithm agent (no code_interpreter needed), `mistral-large-latest` for all agents requiring code_interpreter execution.
+>
+> **Key discovery**: `codestral-latest` and `devstral-latest` do NOT support the `code_interpreter` builtin connector. All agents needing sandbox execution must use `mistral-large-latest`.
 
 ### 3.4 Deployment
 
@@ -173,96 +170,85 @@ sequenceDiagram
 
 ## 4. Agent Architecture (Detailed)
 
-### 4.1 Agent Creation Pattern
+### 4.1 Agent Creation Pattern (Actual Implementation)
+
+Agents are created via `AgentRegistry` with double-checked locking and cached per process. No handoffs are configured — the pipeline executor calls each agent independently.
 
 ```python
-from mistralai import Mistral, CompletionArgs
-
-client = Mistral(api_key=MISTRAL_API_KEY)
-
-orchestrator = client.beta.agents.create(
-    model="mistral-large-latest",
-    name="orchestrator",
-    description="Routes user requests to specialized agents. Manages pipeline lifecycle.",
-    instructions=ORCHESTRATOR_SYSTEM_PROMPT,
-    tools=[{"type": "web_search"}],
-)
-
 eda_agent = client.beta.agents.create(
     model="mistral-large-latest",
-    name="eda-agent",
-    description="Performs exploratory data analysis on time-series data.",
-    instructions=EDA_SYSTEM_PROMPT,
+    name="anomalistral_eda",
+    description="Performs exploratory data analysis for time-series datasets",
+    instructions=EDA_PROMPT,
     tools=[{"type": "code_interpreter"}],
 )
 
 algorithm_agent = client.beta.agents.create(
-    model="mistral-large-latest",
-    name="algorithm-selection-agent",
-    description="Selects optimal anomaly detection algorithms based on data characteristics.",
-    instructions=ALGORITHM_SYSTEM_PROMPT,
+    model="mistral-small-latest",
+    name="anomalistral_algorithm",
+    description="Recommends suitable anomaly detection algorithms",
+    instructions=ALGORITHM_PROMPT,
+    tools=[],
 )
 
 code_agent = client.beta.agents.create(
-    model="codestral-latest",
-    name="code-generation-agent",
-    description="Generates production-ready Python anomaly detection code.",
-    instructions=CODE_SYSTEM_PROMPT,
+    model="mistral-large-latest",
+    name="anomalistral_codegen",
+    description="Generates and tests anomaly detection pipeline code",
+    instructions=CODEGEN_PROMPT,
     tools=[{"type": "code_interpreter"}],
 )
 
 validation_agent = client.beta.agents.create(
-    model="mistral-small-latest",
-    name="validation-agent",
-    description="Validates anomaly detection results with statistical tests.",
-    instructions=VALIDATION_SYSTEM_PROMPT,
+    model="mistral-large-latest",
+    name="anomalistral_validation",
+    description="Validates anomaly detection outputs and statistical reliability",
+    instructions=VALIDATION_PROMPT,
     tools=[{"type": "code_interpreter"}],
-)
-
-orchestrator = client.beta.agents.update(
-    agent_id=orchestrator.id,
-    handoffs=[eda_agent.id, algorithm_agent.id, code_agent.id, validation_agent.id],
 )
 ```
 
-### 4.2 Conversation Flow with Client-Side Handoff Control
+### 4.2 Sequential Pipeline Execution (Actual Implementation)
+
+Server-side handoffs (`handoff_execution="server"`) were **disabled** due to instability (HTTP 500 / code 3000). The pipeline executor runs each agent phase as an independent `conversations.start` call with dataset files uploaded via the Mistral Files API.
 
 ```python
+file_id = client.files.upload(
+    file={"file_name": path.name, "content": fh},
+    purpose="code_interpreter",
+)
+
+inputs = [MessageInputEntry(
+    role="user",
+    content=[
+        ToolFileChunk(tool="code_interpreter", file_id=file_id),
+        TextChunk(text=prompt),
+    ],
+)]
+
 response = client.beta.conversations.start(
-    agent_id=orchestrator.id,
-    inputs=user_message,
-    handoff_execution="server",
-    store=True,
+    agent_id=eda_agent.id,
+    inputs=inputs,
 )
 
 for output in response.outputs:
-    if output.type == "agent.handoff":
-        await stream_to_frontend(session_id, {
-            "type": "status",
-            "payload": {"agent": output.agent_name, "status": "active"}
-        })
-    elif output.type == "message.output":
-        await stream_to_frontend(session_id, {
-            "type": "delta",
-            "payload": {"content": output.content, "agent": output.agent_id}
-        })
+    if output.type == "message.output":
+        # Extract text content from the agent's response
+        pass
     elif output.type == "tool.execution":
-        await stream_to_frontend(session_id, {
-            "type": "tool_result",
-            "payload": {"tool": output.name}
-        })
+        # code_interpreter ran and returned results
+        pass
 ```
 
-### 4.3 Self-Debugging Loop
+**Key discoveries:**
+- `agents.complete()` does NOT execute code_interpreter — only returns tool_call intent
+- `conversations.start()` automatically executes code_interpreter and returns results
+- `client.files.upload()` requires `purpose="code_interpreter"` for CSV files (422 without it)
+- `ToolFileChunk` goes inside `MessageInputEntry.content` as a content chunk
 
-When the code agent generates code that fails execution:
+### 4.3 Self-Debugging
 
-1. code_interpreter returns error in `tool.execution` result
-2. Code agent sees the error → generates fix
-3. Re-executes via code_interpreter
-4. Max 3 retries, then escalate to user with error context
-
-This is handled natively by Mistral's conversation append — the error becomes context for the next turn.
+Self-debugging within a single `conversations.start` call is handled natively by the code_interpreter — if code fails, the agent sees the error and can retry within the same conversation turn. Explicit multi-turn retry loops via `conversations.append` are available but not currently used in the pipeline.
 
 ---
 
@@ -290,18 +276,18 @@ backend/
 │   ├── agents/
 │   │   ├── __init__.py
 │   │   ├── registry.py          # Agent creation & caching
-│   │   ├── orchestrator.py      # Orchestrator logic
-│   │   ├── prompts/
-│   │   │   ├── orchestrator.py
-│   │   │   ├── eda.py
-│   │   │   ├── algorithm.py
-│   │   │   ├── codegen.py
-│   │   │   └── validation.py
-│   │   └── executor.py          # Pipeline execution engine
+│   │   ├── executor.py          # Sequential pipeline executor + Mistral Files API
+│   │   └── prompts/
+│   │       ├── orchestrator.py
+│   │       ├── eda.py
+│   │       ├── algorithm.py
+│   │       ├── codegen.py
+│   │       └── validation.py
 │   ├── services/
 │   │   ├── __init__.py
 │   │   ├── streaming.py         # SSE event manager
-│   │   └── file_handler.py      # Upload processing
+│   │   ├── file_handler.py      # Upload processing
+│   │   └── retry.py             # Exponential backoff for Mistral API calls
 │   └── db/
 │       ├── __init__.py
 │       └── session.py           # async SQLite session factory
@@ -600,9 +586,9 @@ Zero infrastructure, managed by Mistral, returns stdout/stderr/files. E2B adds a
 
 Zero provisioning, single file, no connection pooling complexity. For a single-user demo this is perfect. Can migrate to Postgres post-hackathon by swapping the async engine.
 
-### D4: Server-side handoff execution
+### D4: Sequential pipeline over server-side handoffs
 
-Using `handoff_execution="server"` lets Mistral handle the entire multi-agent chain. We stream the events to the frontend. If we need per-step user approval, we can switch to `"client"` and intercept handoffs.
+Originally planned to use `handoff_execution="server"` for automatic multi-agent routing. In practice, server-side handoffs returned HTTP 500 / code 3000 errors. The final implementation uses **explicit sequential `conversations.start` calls** per phase, which proved more reliable and gave better control over SSE event emission and error handling per phase.
 
 ### D5: Zustand over Redux/Context
 
@@ -655,7 +641,7 @@ React Flow uses Zustand internally. Using the same state library reduces bundle 
 ```env
 MISTRAL_API_KEY=rUO0UwIrNDEgjBhDDvvg2kwnrZMFAuFi
 MISTRAL_DEFAULT_MODEL=mistral-large-latest
-MISTRAL_CODE_MODEL=codestral-latest
+MISTRAL_CODE_MODEL=mistral-large-latest
 MISTRAL_SMALL_MODEL=mistral-small-latest
 DATABASE_URL=sqlite+aiosqlite:///./anomalistral.db
 UPLOAD_DIR=./uploads

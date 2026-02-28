@@ -7,53 +7,55 @@
 
 **Autonomous Agentic MLOps Platform for Time-Series Anomaly Detection.**
 
-Anomalistral transforms natural language descriptions into production-ready anomaly detection pipelines. By orchestrating five specialized Mistral agents, the platform automates data ingestion, exploratory analysis, algorithm selection, code generation, and statistical validation—all visualized through an interactive DAG editor.
+Anomalistral transforms natural language descriptions into production-ready anomaly detection pipelines. By orchestrating five specialized Mistral agents through a sequential execution pipeline, the platform automates data ingestion, exploratory analysis, algorithm selection, code generation, and statistical validation—all visualized through an interactive DAG editor.
 
 ---
 
 ## 🛠️ Architecture
 
-Anomalistral uses a multi-agent orchestration pattern powered by the **Mistral Agents API**. The frontend synchronizes with the backend via **Server-Sent Events (SSE)** to provide real-time updates on agent progress and pipeline state.
+Anomalistral uses a **sequential agent pipeline** powered by the **Mistral Agents API**. Each pipeline phase runs as an independent `conversations.start` call with dataset files uploaded to the Mistral sandbox via the **Files API** and attached as `ToolFileChunk` entries. The frontend synchronizes with the backend via **Server-Sent Events (SSE)** for real-time progress updates.
 
 ```mermaid
 graph TD
     User([User]) <--> Frontend[Next.js 15 + React Flow 12]
     Frontend -- REST API --> Backend[FastAPI + SQLAlchemy]
     Backend -- SSE Events --> Frontend
-    
-    subgraph "Mistral Agentic Core"
-        Orchestrator[Orchestrator Agent]
-        EDA[EDA Agent]
-        Algo[Algorithm Selector]
-        CodeGen[Code Generator]
-        Validator[Validation Agent]
-        
-        Orchestrator <--> EDA
-        Orchestrator <--> Algo
-        Orchestrator <--> CodeGen
-        Orchestrator <--> Validator
+
+    subgraph "Mistral Sequential Pipeline"
+        EDA[EDA Agent<br/>mistral-large-latest<br/>+ code_interpreter]
+        Algo[Algorithm Selector<br/>mistral-small-latest]
+        CodeGen[Code Generator<br/>mistral-large-latest<br/>+ code_interpreter]
+        Validator[Validation Agent<br/>mistral-large-latest<br/>+ code_interpreter]
+
+        EDA --> Algo --> CodeGen --> Validator
     end
-    
-    Backend -- Agent Completion --> Orchestrator
+
+    Backend -- conversations.start --> EDA
+    Backend -- Files API Upload --> MistralFiles[(Mistral Files API)]
+    MistralFiles -- ToolFileChunk --> EDA
+    MistralFiles -- ToolFileChunk --> CodeGen
+    MistralFiles -- ToolFileChunk --> Validator
     Storage[(SQLite + Filesystem)] <--> Backend
 ```
 
----
-
-<!-- screenshots -->
-*(Screenshots showing the interactive DAG, real-time agent chat, and anomaly visualization)*
+**Key implementation details:**
+- Datasets are uploaded to Mistral via `client.files.upload(purpose="code_interpreter")` and attached to agent inputs as `ToolFileChunk` content chunks
+- Each agent phase is an independent `conversations.start` call (no server-side handoffs)
+- The EDA phase's `conversation_id` is preserved for follow-up chat interactions
+- All agents with `code_interpreter` execute code in Mistral's sandboxed environment
 
 ---
 
 ## ✨ Features
 
-- **Natural Language Orchestration**: Describe your data and detection goals; the Orchestrator handles the rest.
-- **Interactive DAG Editor**: Visualize and modify the generated MLOps pipeline using React Flow 12.
-- **Automated EDA**: Deep statistical analysis, distribution plots, and data quality scoring powered by Mistral-Large.
-- **Intelligent Model Selection**: Algorithm recommendations (Isolation Forest, Local Outlier Factor, etc.) tailored to your specific data characteristics.
-- **Production-Ready Code**: Instant generation of clean, documented Python code using Codestral.
-- **Rigorous Validation**: Statistical performance metrics and automated validation reports to ensure reliability.
-- **Real-time Streaming**: SSE-powered UI that reflects agent thoughts and pipeline execution status instantly.
+- **Natural Language Orchestration**: Describe your data and detection goals; the pipeline handles the rest.
+- **Interactive DAG Editor**: Visualize the generated MLOps pipeline using React Flow 12 with status-aware custom nodes.
+- **Automated EDA**: Deep statistical analysis, distribution profiling, and data quality scoring via Mistral code_interpreter.
+- **Intelligent Model Selection**: Algorithm recommendations (Isolation Forest, Local Outlier Factor, etc.) tailored to data characteristics.
+- **Production-Ready Code**: Instant generation of clean Python code using Mistral Large with code_interpreter for in-sandbox testing.
+- **Rigorous Validation**: Statistical performance metrics and automated validation reports for reliability assurance.
+- **Real-time Streaming**: SSE-powered UI that reflects agent progress and pipeline execution status instantly.
+- **Sandbox File Access**: Datasets uploaded via Mistral Files API and attached as `ToolFileChunk` for direct sandbox access.
 
 ---
 
@@ -61,7 +63,7 @@ graph TD
 
 | Component | Technology |
 | :--- | :--- |
-| **LLM Core** | Mistral Agents API (Large, Small, Codestral), Code Interpreter |
+| **LLM Core** | Mistral Agents API (`mistral-large-latest`, `mistral-small-latest`), Code Interpreter, Files API |
 | **Frontend** | Next.js 15 (App Router), React 19, Tailwind CSS 4, shadcn/ui |
 | **State & Flow** | React Flow 12, Zustand |
 | **Visuals** | Recharts (Time-series), Shiki (Syntax highlighting) |
@@ -106,13 +108,14 @@ npm run dev
 │   ├── app/
 │   │   ├── agents/
 │   │   │   ├── prompts/       (orchestrator, eda, algorithm, codegen, validation)
-│   │   │   ├── executor.py
-│   │   │   └── registry.py
-│   │   ├── db/
-│   │   ├── models/
+│   │   │   ├── executor.py    (sequential pipeline + Mistral Files API upload)
+│   │   │   └── registry.py    (agent creation & caching)
+│   │   ├── db/                (async SQLite session factory)
+│   │   ├── models/            (SQLAlchemy models + Pydantic schemas)
 │   │   ├── routers/           (sessions, pipelines, uploads, stream)
 │   │   ├── services/          (streaming, file_handler, retry)
 │   │   ├── config.py
+│   │   ├── deps.py
 │   │   └── main.py
 │   ├── Dockerfile
 │   ├── railway.toml
@@ -123,15 +126,20 @@ npm run dev
 │   │   ├── components/
 │   │   │   ├── chat/          (ChatPanel)
 │   │   │   ├── error/         (ErrorBoundary, PanelError)
+│   │   │   ├── layout/        (Header)
 │   │   │   ├── loading/       (SessionSkeleton, PipelineSkeleton, ResultsSkeleton)
 │   │   │   ├── pipeline/      (PipelineEditor, PipelineNode)
+│   │   │   ├── providers/     (ThemeProvider)
 │   │   │   ├── results/       (EDAReport, CodeViewer, ValidationReport, AnomalyChart)
 │   │   │   └── ui/            (shadcn/ui components)
 │   │   ├── hooks/             (useSSE, useSession)
 │   │   ├── stores/            (pipelineStore, sessionStore, streamStore)
+│   │   ├── lib/               (api client, utils)
 │   │   └── types/
 │   ├── vercel.json
 │   └── package.json
+├── ANOMALISTRAL_PLAN.md
+├── DEMO.md
 └── README.md
 ```
 
@@ -153,14 +161,14 @@ npm run dev
 ## 🚢 Deployment
 
 The project is architected for cloud-native deployment:
-- **Frontend**: Optimized for Vercel with edge-ready API routes.
+- **Frontend**: Optimized for Vercel with edge-ready configuration.
 - **Backend**: Multi-stage Dockerfile ready for Railway or Render.
-- **Resilience**: Implements exponential backoff on all LLM calls to respect rate limits.
+- **Resilience**: Implements exponential backoff on all Mistral API calls to respect rate limits.
 
 ---
 
 ## 🏆 Mistral Hackathon 2026
 
-Built within 48 hours for the Mistral Hackathon, focusing on the power of **Agentic Handoffs** and the **Mistral Agents API**. Anomalistral demonstrates how autonomous agents can bridge the gap between complex ML requirements and zero-code accessibility.
+Built within 48 hours for the Mistral Hackathon, showcasing the power of the **Mistral Agents API** with `conversations.start`, `code_interpreter`, and the **Files API**. Anomalistral demonstrates how autonomous agents can bridge the gap between complex ML requirements and zero-code accessibility.
 
 **Team:** KR Agents Team — [Kacper Kozik](https://github.com/Kacper0199), [Kamil Bednarz](https://github.com/kambedn)
