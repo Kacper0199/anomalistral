@@ -50,6 +50,7 @@ def _upload_file_to_mistral(client: Mistral, dataset_path: str) -> str | None:
             result = retry_sync(
                 client.files.upload,
                 file={"file_name": path.name, "content": fh},
+                purpose="code_interpreter",
             )
         return str(result.id) if result and hasattr(result, "id") else None
     except Exception:
