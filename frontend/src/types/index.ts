@@ -52,6 +52,10 @@ export interface PipelineNodeData extends Record<string, unknown> {
   status: "idle" | "running" | "success" | "error";
   type: "upload" | "eda" | "algorithm" | "codegen" | "validation" | "deploy";
   detail?: string;
+  progress?: number;
+  startedAt?: string;
+  completedAt?: string;
+  previewData?: string;
 }
 
 export interface ChatMessage {
