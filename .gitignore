@@ -12,6 +12,7 @@ artifacts/
 .env.production
 
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
 *.egg-info/
