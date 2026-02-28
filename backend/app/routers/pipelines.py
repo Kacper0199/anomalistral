@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from mistralai import Mistral
@@ -13,6 +14,7 @@ from app.models.database import Session
 from app.services.streaming import stream_manager
 
 router = APIRouter(prefix="/pipelines", tags=["pipelines"])
+logger = logging.getLogger(__name__)
 
 _registry: AgentRegistry | None = None
 
@@ -52,7 +54,10 @@ async def start_pipeline(
                 db=background_db,
                 stream_manager=stream_manager,
             )
-            await executor.execute(user_prompt=user_prompt, dataset_path=dataset_path)
+            try:
+                await executor.execute(user_prompt=user_prompt, dataset_path=dataset_path)
+            except Exception:
+                logger.exception("Pipeline execution failed", extra={"session_id": session_id})
 
     asyncio.create_task(run_pipeline())
     return {"status": "started", "session_id": session_id}

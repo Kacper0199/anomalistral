@@ -143,8 +143,13 @@ async def _run_chat_command(
             )
             text = _extract_conversation_text(response)
             await _publish_chat_response(session_id=session_id, text=text, db=db, stream=stream)
-        except Exception as exc:
-            await _publish_chat_response(session_id=session_id, text=str(exc), db=db, stream=stream)
+        except Exception:
+            await _publish_chat_response(
+                session_id=session_id,
+                text="I'm having trouble processing your message. Please try again in a moment.",
+                db=db,
+                stream=stream,
+            )
 
 
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)

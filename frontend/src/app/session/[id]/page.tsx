@@ -5,7 +5,10 @@ import { useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { ErrorBoundary } from "@/components/error/ErrorBoundary";
+import { PanelError } from "@/components/error/PanelError";
 import { Header } from "@/components/layout/Header";
+import { SessionSkeleton } from "@/components/loading/SessionSkeleton";
 import { PipelineEditor } from "@/components/pipeline/PipelineEditor";
 import { AnomalyChart } from "@/components/results/AnomalyChart";
 import { CodeViewer } from "@/components/results/CodeViewer";
@@ -343,12 +346,18 @@ export default function SessionPage() {
     return null;
   }
 
+  if (!currentSession) {
+    return <SessionSkeleton />;
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header status={currentSession?.status} />
+      <Header status={currentSession.status} />
       <main className="mx-auto grid h-[calc(100vh-4rem)] w-full max-w-[1800px] grid-cols-1 gap-4 p-4 md:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)_420px]">
         <section className="min-h-[340px] md:h-full">
-          <ChatPanel sessionId={sessionId} />
+          <ErrorBoundary fallback={<PanelError message="Chat panel crashed" />}>
+            <ChatPanel sessionId={sessionId} />
+          </ErrorBoundary>
         </section>
 
         <section className="flex min-h-[420px] flex-col rounded-xl border border-border/80 bg-card/30 p-3">
@@ -358,7 +367,9 @@ export default function SessionPage() {
               Stream: {isConnected ? "connected" : "reconnecting"}
             </span>
           </div>
-          <PipelineEditor />
+          <ErrorBoundary fallback={<PanelError message="Pipeline view unavailable" />}>
+            <PipelineEditor />
+          </ErrorBoundary>
         </section>
 
         <section className="h-full min-h-[340px] rounded-xl border border-border/80 bg-card/30 p-3 xl:overflow-hidden">
@@ -370,19 +381,27 @@ export default function SessionPage() {
               <TabsTrigger value="anomaly">Anomaly</TabsTrigger>
             </TabsList>
             <TabsContent value="eda" className="mt-3">
-              <EDAReport results={currentSession?.eda_results ?? null} />
+              <ErrorBoundary fallback={<PanelError message="EDA report failed to render" />}>
+                <EDAReport results={currentSession.eda_results ?? null} />
+              </ErrorBoundary>
             </TabsContent>
             <TabsContent value="code" className="mt-3">
-              <CodeViewer code={currentSession?.generated_code ?? null} />
+              <ErrorBoundary fallback={<PanelError message="Code viewer failed to render" />}>
+                <CodeViewer code={currentSession.generated_code ?? null} />
+              </ErrorBoundary>
             </TabsContent>
             <TabsContent value="validation" className="mt-3">
-              <ValidationReport results={currentSession?.validation_results ?? null} />
+              <ErrorBoundary fallback={<PanelError message="Validation report failed to render" />}>
+                <ValidationReport results={currentSession.validation_results ?? null} />
+              </ErrorBoundary>
             </TabsContent>
             <TabsContent value="anomaly" className="mt-3">
-              <AnomalyChart
-                edaResults={currentSession?.eda_results ?? null}
-                validationResults={currentSession?.validation_results ?? null}
-              />
+              <ErrorBoundary fallback={<PanelError message="Anomaly chart failed to render" />}>
+                <AnomalyChart
+                  edaResults={currentSession.eda_results ?? null}
+                  validationResults={currentSession.validation_results ?? null}
+                />
+              </ErrorBoundary>
             </TabsContent>
           </Tabs>
         </section>
