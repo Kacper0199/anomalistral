@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/stores/sessionStore";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 
 interface ChatPanelProps {
@@ -89,7 +88,7 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
           {messages.length}
         </Badge>
       </div>
-      <ScrollArea className="flex-1 px-4 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <div>
           {messages.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border/80 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
@@ -176,7 +175,7 @@ export function ChatPanel({ sessionId }: ChatPanelProps) {
           )}
           <div ref={bottomRef} />
         </div>
-      </ScrollArea>
+      </div>
       <div className="border-t border-border/80 p-3">
         <div className="mb-2 flex items-center justify-between px-1 text-xs text-muted-foreground">
           <span>{value.length} chars</span>
