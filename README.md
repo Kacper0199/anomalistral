@@ -163,4 +163,4 @@ The project is architected for cloud-native deployment:
 
 Built within 48 hours for the Mistral Hackathon, focusing on the power of **Agentic Handoffs** and the **Mistral Agents API**. Anomalistral demonstrates how autonomous agents can bridge the gap between complex ML requirements and zero-code accessibility.
 
-**Team:** KR Agents Team — [Kacper Kozik](https://github.com/Kacper0199), Kamil Bednarz
+**Team:** KR Agents Team — [Kacper Kozik](https://github.com/Kacper0199), [Kamil Bednarz](https://github.com/kambedn)
