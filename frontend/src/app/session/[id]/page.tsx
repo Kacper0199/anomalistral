@@ -209,6 +209,9 @@ export default function SessionPage() {
         if (results) {
           updateSession((session) => ({ ...session, eda_results: results }));
         }
+        if (sessionId) {
+          void loadSession(sessionId);
+        }
         addMessage({
           id: `${event.seq}`,
           role: "system",
@@ -295,6 +298,9 @@ export default function SessionPage() {
         const validation = getPayloadRecord(event.payload, "validation");
         if (validation) {
           updateSession((session) => ({ ...session, validation_results: validation }));
+        }
+        if (sessionId) {
+          void loadSession(sessionId);
         }
         addMessage({
           id: `${event.seq}`,
