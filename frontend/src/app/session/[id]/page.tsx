@@ -108,16 +108,21 @@ export default function SessionPage() {
     void loadSession(sessionId);
   }, [loadSession, sessionId]);
 
+  const sseRef = useRef({ connect, disconnect, clearStream });
+  useEffect(() => {
+    sseRef.current = { connect, disconnect, clearStream };
+  });
+
   useEffect(() => {
     if (!sessionId) {
       return;
     }
-    connect();
+    sseRef.current.connect();
     return () => {
-      disconnect();
-      clearStream();
+      sseRef.current.disconnect();
+      sseRef.current.clearStream();
     };
-  }, [clearStream, connect, disconnect, sessionId]);
+  }, [sessionId]);
 
   useEffect(() => {
     if (!currentSession) {
@@ -372,30 +377,30 @@ export default function SessionPage() {
           </ErrorBoundary>
         </section>
 
-        <section className="h-full min-h-[340px] rounded-xl border border-border/80 bg-card/30 p-3 xl:overflow-hidden">
-          <Tabs defaultValue="eda" className="h-full">
-            <TabsList className="grid w-full grid-cols-4">
+        <section className="flex h-full min-h-[340px] flex-col rounded-xl border border-border/80 bg-card/30 p-3 xl:overflow-hidden">
+          <Tabs defaultValue="eda" className="flex min-h-0 flex-1 flex-col">
+            <TabsList className="grid w-full shrink-0 grid-cols-4">
               <TabsTrigger value="eda">EDA</TabsTrigger>
               <TabsTrigger value="code">Code</TabsTrigger>
               <TabsTrigger value="validation">Validation</TabsTrigger>
               <TabsTrigger value="anomaly">Anomaly</TabsTrigger>
             </TabsList>
-            <TabsContent value="eda" className="mt-3">
+            <TabsContent value="eda" className="mt-3 min-h-0 flex-1 overflow-y-auto">
               <ErrorBoundary fallback={<PanelError message="EDA report failed to render" />}>
                 <EDAReport results={currentSession.eda_results ?? null} />
               </ErrorBoundary>
             </TabsContent>
-            <TabsContent value="code" className="mt-3">
+            <TabsContent value="code" className="mt-3 min-h-0 flex-1 overflow-y-auto">
               <ErrorBoundary fallback={<PanelError message="Code viewer failed to render" />}>
                 <CodeViewer code={currentSession.generated_code ?? null} />
               </ErrorBoundary>
             </TabsContent>
-            <TabsContent value="validation" className="mt-3">
+            <TabsContent value="validation" className="mt-3 min-h-0 flex-1 overflow-y-auto">
               <ErrorBoundary fallback={<PanelError message="Validation report failed to render" />}>
                 <ValidationReport results={currentSession.validation_results ?? null} />
               </ErrorBoundary>
             </TabsContent>
-            <TabsContent value="anomaly" className="mt-3">
+            <TabsContent value="anomaly" className="mt-3 min-h-0 flex-1 overflow-y-auto">
               <ErrorBoundary fallback={<PanelError message="Anomaly chart failed to render" />}>
                 <AnomalyChart
                   edaResults={currentSession.eda_results ?? null}

@@ -1,5 +1,10 @@
 generate_sample_data.py
 sample_data.csv
+sample_data_v*.csv
+
+test_mistral_*.py
+check_mistral_*.py
+repro_*.py
 
 build_plans/
 instructions/

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from mistralai import Mistral
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,61 @@ from app.models.database import Event, Session
 from app.models.schemas import SSEEvent
 from app.services.retry import retry_sync
 from app.services.streaming import StreamManager
+
+MAX_DATASET_CONTEXT_ROWS = 5
+MAX_DATASET_CONTEXT_COLS = 40
+
+
+def _build_dataset_context(dataset_path: str) -> str:
+    path = Path(dataset_path)
+    if not path.exists():
+        return ""
+    try:
+        df = pd.read_csv(path) if path.suffix.lower() == ".csv" else pd.read_json(path)
+    except Exception:
+        return ""
+
+    cols = list(df.columns[:MAX_DATASET_CONTEXT_COLS])
+    dtypes = {str(c): str(df[c].dtype) for c in cols}
+    sample = df.head(MAX_DATASET_CONTEXT_ROWS).to_dict(orient="records")
+    stats = {
+        "rows": len(df),
+        "columns": [str(c) for c in df.columns],
+        "dtypes": dtypes,
+        "null_counts": {str(c): int(df[c].isnull().sum()) for c in cols},
+    }
+    return json.dumps({"statistics": stats, "sample_rows": sample}, default=str)
+
+
+def _upload_file_to_mistral(client: Mistral, dataset_path: str) -> str | None:
+    path = Path(dataset_path)
+    if not path.exists():
+        return None
+    try:
+        with open(path, "rb") as fh:
+            result = retry_sync(
+                client.files.upload,
+                file={"file_name": path.name, "content": fh},
+            )
+        return str(result.id) if result and hasattr(result, "id") else None
+    except Exception:
+        return None
+
+
+def _build_inputs_with_file(prompt: str, file_id: str | None) -> Any:
+    if not file_id:
+        return prompt
+    from mistralai.models import MessageInputEntry, TextChunk, ToolFileChunk
+
+    return [
+        MessageInputEntry(
+            role="user",
+            content=[
+                ToolFileChunk(tool="code_interpreter", file_id=file_id),
+                TextChunk(text=prompt),
+            ],
+        )
+    ]
 
 
 class PipelineExecutor:
@@ -40,12 +96,21 @@ class PipelineExecutor:
             await self._publish("pipeline.started", {"status": "started", "session_id": self.session_id})
             await self._set_status("eda_running")
 
+            file_id: str | None = None
+            dataset_context = ""
+            if dataset_path:
+                dataset_context = await asyncio.to_thread(_build_dataset_context, dataset_path)
+                file_id = await asyncio.to_thread(_upload_file_to_mistral, self.client, dataset_path)
+                if file_id:
+                    await self._update_session(mistral_file_id=file_id)
+
             self._current_phase = "eda"
             await self._publish("eda.started", {"session_id": self.session_id})
             eda_agent_id = self._agent_id(await self.registry.get_eda_agent())
             eda_raw, conversation_id = await self._run_agent_phase(
                 agent_id=eda_agent_id,
-                prompt=self._eda_prompt(user_prompt, dataset_path),
+                prompt=self._eda_prompt(user_prompt, dataset_context),
+                file_id=file_id,
             )
             if conversation_id:
                 await self._update_session(conversation_id=conversation_id)
@@ -71,7 +136,8 @@ class PipelineExecutor:
             code_agent_id = self._agent_id(await self.registry.get_code_agent())
             code_output, _ = await self._run_agent_phase(
                 agent_id=code_agent_id,
-                prompt=self._code_prompt(eda_data, algorithm_data, dataset_path),
+                prompt=self._code_prompt(eda_data, algorithm_data, dataset_context),
+                file_id=file_id,
             )
             await self._update_session(generated_code=code_output)
             await self._persist_generated_code(code_output)
@@ -83,7 +149,8 @@ class PipelineExecutor:
             validation_agent_id = self._agent_id(await self.registry.get_validation_agent())
             validation_raw, _ = await self._run_agent_phase(
                 agent_id=validation_agent_id,
-                prompt=self._validation_prompt(code_output, dataset_path),
+                prompt=self._validation_prompt(code_output, dataset_context),
+                file_id=file_id,
             )
             validation_data = self._to_structured_payload(validation_raw)
             await self._update_session(validation_results=json.dumps(validation_data))
@@ -109,16 +176,22 @@ class PipelineExecutor:
         await self._publish("chat.response", {"text": response_text, "agent": "orchestrator"})
         return response_text
 
-    async def _run_agent_phase(self, agent_id: str, prompt: str) -> tuple[str, str | None]:
+    async def _run_agent_phase(
+        self,
+        agent_id: str,
+        prompt: str,
+        file_id: str | None = None,
+    ) -> tuple[str, str | None]:
         if not agent_id:
             raise RuntimeError("Agent is missing id")
-        return await asyncio.to_thread(self._call_agent, agent_id, prompt)
+        return await asyncio.to_thread(self._call_agent, agent_id, prompt, file_id)
 
-    def _call_agent(self, agent_id: str, prompt: str) -> tuple[str, str | None]:
+    def _call_agent(self, agent_id: str, prompt: str, file_id: str | None = None) -> tuple[str, str | None]:
+        inputs = _build_inputs_with_file(prompt, file_id)
         response = retry_sync(
             self.client.beta.conversations.start,
             agent_id=agent_id,
-            inputs=prompt,
+            inputs=inputs,
         )
         return self._extract_conversation_text(response), self._conversation_id(response)
 
@@ -262,11 +335,13 @@ class PipelineExecutor:
             return value.get(key)
         return getattr(value, key, None)
 
-    def _eda_prompt(self, user_prompt: str, dataset_path: str | None) -> str:
+    def _eda_prompt(self, user_prompt: str, dataset_context: str) -> str:
+        ctx = f" Dataset context: {dataset_context}." if dataset_context else ""
         return (
             "Perform exploratory data analysis for this anomaly detection task. "
-            f"User intent: {user_prompt}. "
-            f"Dataset location: {dataset_path or 'not_provided'}. "
+            f"User intent: {user_prompt}.{ctx} "
+            "The dataset file is attached via code_interpreter — load it with "
+            "pandas from the sandbox working directory. "
             "Return a strict JSON object with keys: summary, frequency, missing_values, trend, seasonality, "
             "stationarity, statistics, notes."
         )
@@ -279,19 +354,21 @@ class PipelineExecutor:
             "fit_reason, risks, compute_cost."
         )
 
-    def _code_prompt(self, eda_data: dict[str, Any], algorithm_data: dict[str, Any], dataset_path: str | None) -> str:
+    def _code_prompt(self, eda_data: dict[str, Any], algorithm_data: dict[str, Any], dataset_context: str) -> str:
+        ctx = f" Dataset context: {dataset_context}." if dataset_context else ""
         return (
             "Generate production-ready Python anomaly detection code. "
-            f"Dataset path: {dataset_path or 'not_provided'}. "
+            f"The dataset file is attached via code_interpreter — load it from the sandbox.{ctx} "
             f"EDA JSON: {json.dumps(eda_data)}. "
             f"Algorithm JSON: {json.dumps(algorithm_data)}. "
             "Return executable Python code only."
         )
 
-    def _validation_prompt(self, code_output: str, dataset_path: str | None) -> str:
+    def _validation_prompt(self, code_output: str, dataset_context: str) -> str:
+        ctx = f" Dataset context: {dataset_context}." if dataset_context else ""
         return (
             "Validate anomaly detection outputs statistically. "
-            f"Dataset path: {dataset_path or 'not_provided'}. "
+            f"The dataset file is attached via code_interpreter — load it from the sandbox.{ctx} "
             f"Generated code: {code_output[:8000]}. "
             "Return strict JSON with keys: metrics, diagnostics, confidence, caveats, recommendation."
         )
