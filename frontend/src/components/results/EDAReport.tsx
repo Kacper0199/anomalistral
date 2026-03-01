@@ -12,7 +12,8 @@ import {
   YAxis,
 } from "recharts";
 
-import { Badge } from "@/components/ui/badge";
+import { ErrorBoundary } from "@/components/error/ErrorBoundary";
+import { PanelError } from "@/components/error/PanelError";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -235,13 +236,6 @@ const getStatsRows = (results: UnknownRecord, statsSource: UnknownRecord): Stats
   });
 };
 
-const badgeToneClass: Record<QualityTone, string> = {
-  green: "border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
-  yellow: "border-amber-500/30 bg-amber-500/15 text-amber-300",
-  red: "border-rose-500/30 bg-rose-500/15 text-rose-300",
-  neutral: "border-border/70 bg-muted/40 text-muted-foreground",
-};
-
 const CHART_MARGIN = { top: 10, right: 10, left: 0, bottom: 40 };
 
 const XAXIS_TICK_LINE = { stroke: "hsl(var(--border))" };
@@ -384,25 +378,8 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
             </div>
           </div>
           {overview.summary ? <p className="text-sm leading-relaxed text-muted-foreground">{overview.summary}</p> : null}
-        </CardContent>
-      </Card>
-
-      {qualityFlags.length > 0 ? (
-        <Card className="border-border/70 bg-card/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Data Quality Flags</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {qualityFlags.map((flag) => (
-                <Badge key={`${flag.label}-${flag.value}`} variant="outline" className={badgeToneClass[flag.tone]}>
-                  {flag.label}: {flag.value}
-                </Badge>
-              ))}
-            </div>
           </CardContent>
         </Card>
-      ) : null}
 
       {statsSource ? (
         <Card className="border-border/70 bg-card/50">
@@ -442,6 +419,7 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
       ) : null}
 
       {chartData.length > 0 ? (
+        <ErrorBoundary fallback={<PanelError message="Distribution chart unavailable" />}>
         <Card className="border-border/70 bg-card/50">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
@@ -508,6 +486,7 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
             </div>
           </CardContent>
         </Card>
+        </ErrorBoundary>
       ) : null}
     </div>
   );

@@ -299,17 +299,29 @@ class PipelineExecutor:
         raw = text.strip()
         if not raw:
             return {}
+
+        stripped = raw
+        if stripped.startswith("```"):
+            first_nl = stripped.find("\n")
+            if first_nl != -1:
+                stripped = stripped[first_nl + 1 :]
+            stripped = stripped.rstrip("`").strip()
+
         try:
-            return json.loads(raw)
+            return json.loads(stripped)
         except json.JSONDecodeError:
-            start = raw.find("{")
-            end = raw.rfind("}")
+            pass
+
+        for open_ch, close_ch in [("{", "}"), ("[", "]")]:
+            start = stripped.find(open_ch)
+            end = stripped.rfind(close_ch)
             if start != -1 and end != -1 and end > start:
                 try:
-                    return json.loads(raw[start : end + 1])
+                    return json.loads(stripped[start : end + 1])
                 except json.JSONDecodeError:
-                    return {"raw": raw}
-            return {"raw": raw}
+                    continue
+
+        return {"raw": raw}
 
     def _extract_text(self, response: Any) -> str:
         content = response.choices[0].message.content or ""
