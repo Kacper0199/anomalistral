@@ -331,13 +331,23 @@ class DAGExecutor:
 
     async def _execute_block_safe(self, node: DAGNode, upstream_results: dict[str, Any]) -> dict[str, Any]:
         await self._update_block_status(node.id, "running")
+        await self._publish("block.started", {"block_id": node.id, "block_type": node.block_type.value})
         try:
             result = await self.execute_block(node, upstream_results)
             await self._update_block_status(node.id, "success", result=result)
+            await self._publish("block.completed", {
+                "block_id": node.id,
+                "block_type": node.block_type.value,
+                "result": _sanitize_for_json(result),
+            })
             return result
         except Exception as exc:
             await self._update_block_status(node.id, "error", error=str(exc))
-            await self._publish("block.error", {"block_id": node.id, "error": str(exc)})
+            await self._publish("block.failed", {
+                "block_id": node.id,
+                "block_type": node.block_type.value,
+                "error": str(exc),
+            })
             raise
 
     async def execute_block(self, block_node: DAGNode, upstream_results: dict[str, Any]) -> dict[str, Any]:

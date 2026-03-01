@@ -51,6 +51,7 @@ def _to_response(session: Session) -> SessionResponse:
         generated_code=session.generated_code,
         validation_results=_parse_json(session.validation_results),
         dag_config=_parse_json(session.dag_config),
+        template_id=session.template_id,
     )
 
 
@@ -156,6 +157,59 @@ async def _run_chat_command(
             )
 
 
+async def _run_new_chat(
+    session_id: str,
+    message: str,
+    client: Mistral,
+    stream: StreamManager,
+) -> None:
+    from app.agents.registry import AgentRegistry
+    from app.agents.dag_executor import _get_field
+    async with AsyncSessionLocal() as db:
+        try:
+            registry = AgentRegistry(client)
+            orchestrator = await registry.get_orchestrator()
+            agent_id = str(_get_field(orchestrator, "id") or "")
+            if not agent_id:
+                await _publish_chat_response(
+                    session_id=session_id,
+                    text="Unable to initialize chat agent. Please try again.",
+                    db=db,
+                    stream=stream,
+                )
+                return
+
+            from app.services.retry import retry_sync
+            response = await asyncio.to_thread(
+                retry_sync,
+                client.beta.conversations.start,
+                agent_id=agent_id,
+                inputs=message,
+                timeout_ms=90_000,
+            )
+            text = _extract_conversation_text(response)
+            conversation_id = _get_field(response, "conversation_id")
+
+            session = await db.scalar(select(Session).where(Session.id == session_id))
+            if session and conversation_id:
+                session.conversation_id = str(conversation_id)
+                await db.commit()
+
+            await _publish_chat_response(
+                session_id=session_id,
+                text=text or "I processed your request but have no additional output.",
+                db=db,
+                stream=stream,
+            )
+        except Exception:
+            await _publish_chat_response(
+                session_id=session_id,
+                text="I'm having trouble processing your message. Please try again in a moment.",
+                db=db,
+                stream=stream,
+            )
+
+
 @router.post("", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_session(payload: SessionCreate, db: AsyncSession = Depends(get_db)) -> SessionResponse:
     session = Session(user_prompt=payload.user_prompt, status="created")
@@ -214,6 +268,14 @@ async def send_command(
                 _run_chat_command,
                 session_id,
                 conversation_id,
+                message_value.strip(),
+                client,
+                stream,
+            )
+        else:
+            background_tasks.add_task(
+                _run_new_chat,
+                session_id,
                 message_value.strip(),
                 client,
                 stream,

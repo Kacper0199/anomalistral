@@ -10,7 +10,6 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { sendCommand } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -205,18 +204,14 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                 return (
                   <div
                     key={message.id}
-                    className={cn("flex justify-center", startsGroup ? "mt-4" : "mt-1")}
+                    className={cn("flex justify-start", startsGroup ? "mt-4" : "mt-1")}
                   >
-                    <div className="flex w-full items-center gap-2">
-                      <Separator className="flex-1 bg-border/60" />
-                      <div className="inline-flex max-w-[85%] items-center gap-2 rounded-full border border-border/70 bg-muted/30 px-3 py-1 text-[11px] italic text-muted-foreground">
-                        <Cpu className="size-3 shrink-0" />
-                        <span className="min-w-0 break-words">{message.content}</span>
-                        <span className="min-w-[52px] whitespace-nowrap text-[10px] tabular-nums not-italic text-muted-foreground/80">
-                          {relativeTime}
-                        </span>
-                      </div>
-                      <Separator className="flex-1 bg-border/60" />
+                    <div className="inline-flex max-w-[85%] items-center gap-2 rounded-full border border-border/70 bg-muted/30 px-3 py-1 text-[11px] italic text-muted-foreground">
+                      <Cpu className="size-3 shrink-0" />
+                      <span className="min-w-0 break-words">{message.content}</span>
+                      <span className="min-w-[52px] whitespace-nowrap text-[10px] tabular-nums not-italic text-muted-foreground/80">
+                        {relativeTime}
+                      </span>
                     </div>
                   </div>
                 );
