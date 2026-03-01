@@ -55,6 +55,18 @@ export function useSession() {
     setLoading(true);
     try {
       const session = await getSession(id);
+      const existing = useSessionStore.getState().currentSession;
+      if (existing && existing.id === id) {
+        const merged: Session = {
+          ...session,
+          eda_results: session.eda_results ?? existing.eda_results,
+          algorithm_recommendations: session.algorithm_recommendations ?? existing.algorithm_recommendations,
+          generated_code: session.generated_code ?? existing.generated_code,
+          validation_results: session.validation_results ?? existing.validation_results,
+        };
+        setSession(merged);
+        return merged;
+      }
       setSession(session);
       return session;
     } finally {
