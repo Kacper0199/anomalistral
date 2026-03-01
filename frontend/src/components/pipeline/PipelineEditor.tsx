@@ -14,7 +14,6 @@ import {
 import { usePipelineStore, type PipelineFlowNode } from "@/stores/pipelineStore";
 import type { BlockType } from "@/types";
 
-import { DAGToolbar } from "./DAGToolbar";
 import { PipelineEdge } from "./PipelineEdge";
 import { PipelineNode } from "./PipelineNode";
 
@@ -49,7 +48,6 @@ function FlowCanvas() {
   const { screenToFlowPosition } = useReactFlow();
   const nodes = usePipelineStore((s) => s.nodes);
   const edges = usePipelineStore((s) => s.edges);
-  const sessionId = usePipelineStore((s) => s.sessionId);
   const onNodesChange = usePipelineStore((s) => s.onNodesChange);
   const onEdgesChange = usePipelineStore((s) => s.onEdgesChange);
   const onConnect = usePipelineStore((s) => s.onConnect);
@@ -83,38 +81,35 @@ function FlowCanvas() {
   );
 
   return (
-    <div className="flex h-full flex-col gap-2">
-      <DAGToolbar sessionId={sessionId} />
-      <div
-        className="relative h-full min-h-[420px] w-full flex-1 overflow-hidden rounded-xl border border-border/80 bg-card/40"
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+    <div
+      className="relative h-full min-h-[420px] w-full flex-1 overflow-hidden rounded-xl border border-border/80 bg-card/40"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      <ReactFlow<PipelineFlowNode, Edge>
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onNodeDoubleClick={handleNodeDoubleClick}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        defaultEdgeOptions={defaultEdgeOptions}
+        fitView
+        fitViewOptions={fitViewOptions}
+        snapToGrid
+        snapGrid={snapGrid}
+        connectionLineType={ConnectionLineType.SmoothStep}
+        proOptions={proOptions}
       >
-        <ReactFlow<PipelineFlowNode, Edge>
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeDoubleClick={handleNodeDoubleClick}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          defaultEdgeOptions={defaultEdgeOptions}
-          fitView
-          fitViewOptions={fitViewOptions}
-          snapToGrid
-          snapGrid={snapGrid}
-          connectionLineType={ConnectionLineType.SmoothStep}
-          proOptions={proOptions}
-        >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={backgroundGap}
-            size={1}
-            color="var(--border)"
-          />
-        </ReactFlow>
-      </div>
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={backgroundGap}
+          size={1}
+          color="var(--border)"
+        />
+      </ReactFlow>
     </div>
   );
 }

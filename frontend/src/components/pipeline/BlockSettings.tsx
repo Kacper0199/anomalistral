@@ -35,9 +35,20 @@ const blockTypeLabels: Record<BlockType, string> = {
   anomaly_viz: "Anomaly Visualization",
 };
 
+const METHOD_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  normalization: [
+    { value: "standard_scaler", label: "Standard Scaler (z-score)" },
+    { value: "min_max", label: "Min-Max" },
+  ],
+  imputation: [
+    { value: "mean", label: "Mean" },
+    { value: "median", label: "Median" },
+  ],
+};
 
 export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettingsProps) {
   const nodes = usePipelineStore((s) => s.nodes);
+  const setNodeData = usePipelineStore((s) => s.setNodeData);
   const node = blockId ? nodes.find((n) => n.id === blockId) ?? null : null;
   const blockType = node?.data.type ?? null;
 
@@ -48,14 +59,17 @@ export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettin
   const [params, setParams] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const existingConfig = node?.data.config;
+
   useEffect(() => {
     if (!open) return;
-    setMethod("");
-    setColumns("");
-    setWeights("");
-    setPromptOverride("");
-    setParams("");
-  }, [open, blockId]);
+    const cfg = existingConfig;
+    setMethod(cfg?.method ?? "");
+    setColumns(cfg?.columns?.join(", ") ?? "");
+    setWeights(cfg?.weights ? JSON.stringify(cfg.weights, null, 2) : "");
+    setPromptOverride(cfg?.prompt_override ?? "");
+    setParams(cfg?.params ? JSON.stringify(cfg.params, null, 2) : "");
+  }, [open, blockId, existingConfig]);
 
   async function handleSave() {
     if (!sessionId || !blockId) return;
@@ -77,6 +91,7 @@ export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettin
         params: parsedParams,
       };
       await updateBlock(sessionId, blockId, config);
+      setNodeData(blockId, { config });
       toast.success("Block settings saved");
       onClose();
     } catch (err) {
@@ -88,6 +103,7 @@ export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettin
 
   const typeLabel = blockType ? (blockTypeLabels[blockType] ?? blockType) : "Block";
   const showMethod = blockType === "normalization" || blockType === "imputation";
+  const methodOptions = blockType ? (METHOD_OPTIONS[blockType] ?? []) : [];
   const showColumns = blockType === "upload" || blockType === "normalization" || blockType === "imputation";
   const showWeights = blockType === "aggregator";
   const showPrompt = blockType === "algorithm";
@@ -100,15 +116,20 @@ export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettin
         </DialogHeader>
 
         <div className="flex flex-col gap-4 py-2">
-          {showMethod && (
+          {showMethod && methodOptions.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <label htmlFor="block-method" className="text-sm font-medium">Method</label>
-              <Input
+              <select
                 id="block-method"
-                placeholder="e.g. z-score, isolation_forest"
                 value={method}
                 onChange={(e) => setMethod(e.target.value)}
-              />
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">— select —</option>
+                {methodOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           )}
 

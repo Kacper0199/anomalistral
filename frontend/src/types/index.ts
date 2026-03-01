@@ -193,6 +193,7 @@ export interface PipelineNodeData extends Record<string, unknown> {
   label: string;
   status: BlockStatus;
   type: BlockType;
+  config?: BlockConfig | null;
   detail?: string;
   progress?: number;
   startedAt?: string;

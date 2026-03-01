@@ -109,6 +109,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
         label: BLOCK_LABELS[dagNode.block_type] ?? dagNode.block_type,
         status: dagNode.status,
         type: dagNode.block_type,
+        config: dagNode.config ?? null,
       },
     }));
 
@@ -130,7 +131,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
         id: node.id,
         block_type: node.data.type,
         position: node.position,
-        config: null,
+        config: (node.data.config as import("@/types").BlockConfig | null | undefined) ?? null,
         status: node.data.status,
       })),
       edges: edges.map((edge) => ({

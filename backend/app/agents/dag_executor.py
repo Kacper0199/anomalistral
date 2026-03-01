@@ -473,7 +473,10 @@ class DAGExecutor:
             else:
                 numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
-            if method == "min_max":
+            if method == "standard_scaler":
+                for col in numeric_cols:
+                    df[col] = (df[col] - df[col].mean()) / (df[col].std() + 1e-8)
+            elif method == "min_max":
                 for col in numeric_cols:
                     col_min = df[col].min()
                     col_max = df[col].max()
@@ -634,7 +637,7 @@ class DAGExecutor:
             raise RuntimeError(f"Session {self.session_id} not found")
         return session
 
-    def _eda_prompt(self, user_prompt: str, session: Any, upload_cols: list[str] = None) -> str:
+    def _eda_prompt(self, user_prompt: str, session: Any, upload_cols: list[str] | None = None) -> str:
         prompt = (
             "Perform exploratory data analysis for this anomaly detection task. "
             f"User intent: {user_prompt}. "
@@ -646,7 +649,7 @@ class DAGExecutor:
             prompt += f" Please restrict your analysis strictly to these columns: {', '.join(upload_cols)}."
         return prompt
 
-    def _algorithm_prompt(self, eda_data: Any, config: dict, upload_cols: list[str] = None) -> str:
+    def _algorithm_prompt(self, eda_data: Any, config: dict, upload_cols: list[str] | None = None) -> str:
         eda_json = json.dumps(eda_data) if isinstance(eda_data, dict) else str(eda_data)
         prompt = (
             "You are a Data Scientist. Write and execute Python code using the code_interpreter tool to detect anomalies in the uploaded dataset. "

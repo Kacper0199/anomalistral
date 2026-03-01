@@ -13,6 +13,7 @@ import { Header } from "@/components/layout/Header";
 import { SessionSkeleton } from "@/components/loading/SessionSkeleton";
 import { PipelineEditor } from "@/components/pipeline/PipelineEditor";
 import { BlockSettings } from "@/components/pipeline/BlockSettings";
+import { DAGToolbar } from "@/components/pipeline/DAGToolbar";
 import { TemplateSelector } from "@/components/pipeline/TemplateSelector";
 import { AnomalyChart } from "@/components/results/AnomalyChart";
 import { CodeViewer } from "@/components/results/CodeViewer";
@@ -412,9 +413,12 @@ function SessionInner({ sessionId }: { sessionId: string }) {
         </section>
 
         <section className="flex min-h-[420px] flex-col rounded-xl border border-border/80 bg-card/30 p-3">
-          <div className="mb-3 flex items-center justify-between px-1">
+          <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
             <h2 className="text-sm font-medium tracking-wide text-muted-foreground">Pipeline DAG</h2>
-            <span className="text-xs text-muted-foreground">
+            <div className="flex-1">
+              <DAGToolbar sessionId={sessionId} />
+            </div>
+            <span className="text-xs text-muted-foreground shrink-0">
               Stream: {isConnected ? "connected" : "reconnecting"}
             </span>
           </div>
