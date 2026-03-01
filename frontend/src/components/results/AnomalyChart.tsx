@@ -31,10 +31,21 @@ function toFinite(v: unknown): number | null {
   return null;
 }
 
+function tryParseJson(v: unknown): unknown {
+  if (typeof v !== "string") return v;
+  const trimmed = v.trim();
+  if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return v;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return v;
+  }
+}
+
 function extractAnomalyRecords(
   validationResults: Record<string, unknown> | null,
-): AnomalyRecord[] {
-  if (!validationResults) return [];
+): { records: AnomalyRecord[]; summaryText: string | null } {
+  if (!validationResults) return { records: [], summaryText: null };
 
   const scores = validationResults["anomaly_scores"];
   if (Array.isArray(scores) && scores.length > 0) {
@@ -46,17 +57,23 @@ function extractAnomalyRecords(
         records.push({ index: i, score: numeric ?? String(s) });
       }
     });
-    if (records.length > 0) return records;
+    if (records.length > 0) return { records, summaryText: null };
   }
 
-  const anomaliesRaw =
+  const rawAnomalies =
     validationResults["anomalies"] ??
     validationResults["detected_anomalies"] ??
     validationResults["anomaly_points"] ??
     validationResults["outliers"];
 
-  if (Array.isArray(anomaliesRaw)) {
-    return (anomaliesRaw as unknown[]).map((entry, i): AnomalyRecord => {
+  const anomaliesRaw = tryParseJson(rawAnomalies);
+
+  if (typeof anomaliesRaw === "string" && anomaliesRaw.trim().length > 0) {
+    return { records: [], summaryText: anomaliesRaw.trim() };
+  }
+
+  if (Array.isArray(anomaliesRaw) && anomaliesRaw.length > 0) {
+    const records = (anomaliesRaw as unknown[]).map((entry, i): AnomalyRecord => {
       if (isRecord(entry)) {
         const idx = toFinite(entry["index"] ?? entry["idx"] ?? i) ?? i;
         const score =
@@ -73,9 +90,18 @@ function extractAnomalyRecords(
       const idx = toFinite(entry) ?? i;
       return { index: idx, score: "anomaly" };
     });
+    return { records, summaryText: null };
   }
 
-  return [];
+  const summaryKeys = ["summary", "message", "report", "text", "description"];
+  for (const key of summaryKeys) {
+    const val = validationResults[key];
+    if (typeof val === "string" && val.trim().length > 0) {
+      return { records: [], summaryText: val.trim() };
+    }
+  }
+
+  return { records: [], summaryText: null };
 }
 
 function resolveExtraColumns(records: AnomalyRecord[]): string[] {
@@ -90,7 +116,7 @@ function resolveExtraColumns(records: AnomalyRecord[]): string[] {
 }
 
 export function AnomalyChart({ validationResults }: AnomalyChartProps) {
-  const records = useMemo(
+  const { records, summaryText } = useMemo(
     () => extractAnomalyRecords(validationResults),
     [validationResults],
   );
@@ -105,7 +131,7 @@ export function AnomalyChart({ validationResults }: AnomalyChartProps) {
     );
   }
 
-  if (records.length === 0) {
+  if (records.length === 0 && !summaryText) {
     return (
       <Card className="border-zinc-800/80 bg-zinc-950/40">
         <CardHeader className="pb-3">
@@ -116,9 +142,25 @@ export function AnomalyChart({ validationResults }: AnomalyChartProps) {
         </CardHeader>
         <CardContent>
           <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/40 p-6 text-center text-sm text-zinc-400">
-            {validationResults
-              ? "No anomalies detected in the results."
-              : "Anomaly results will appear after pipeline completion."}
+            No anomalies detected in the results.
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (summaryText) {
+    return (
+      <Card className="border-zinc-800/80 bg-zinc-950/40">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-zinc-100">
+            <AlertTriangle className="size-4 text-red-400" />
+            Anomaly Detection Results
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">
+            {summaryText}
           </div>
         </CardContent>
       </Card>

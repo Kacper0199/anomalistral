@@ -13,7 +13,7 @@ import { Header } from "@/components/layout/Header";
 import { SessionSkeleton } from "@/components/loading/SessionSkeleton";
 import { PipelineEditor } from "@/components/pipeline/PipelineEditor";
 import { BlockSettings } from "@/components/pipeline/BlockSettings";
-import { DAGToolbar } from "@/components/pipeline/DAGToolbar";
+import { BlockPalette, PipelineControls } from "@/components/pipeline/DAGToolbar";
 import { TemplateSelector } from "@/components/pipeline/TemplateSelector";
 import { AnomalyChart } from "@/components/results/AnomalyChart";
 import { CodeViewer } from "@/components/results/CodeViewer";
@@ -394,7 +394,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header status={currentSession.status} />
+      <Header status={currentSession.status} backHref="/" />
       <main className="mx-auto grid h-[calc(100vh-4rem)] w-full max-w-[1800px] grid-cols-1 gap-4 p-4 md:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)_420px]">
 
         <section className="min-h-[340px] md:h-full">
@@ -414,21 +414,24 @@ function SessionInner({ sessionId }: { sessionId: string }) {
 
         <section className="flex min-h-[420px] flex-col rounded-xl border border-border/80 bg-card/30 p-3">
           <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
-            <h2 className="text-sm font-medium tracking-wide text-muted-foreground">Pipeline DAG</h2>
-            <div className="flex-1">
-              <DAGToolbar sessionId={sessionId} />
-            </div>
-            <span className="text-xs text-muted-foreground shrink-0">
+            <h2 className="text-sm font-medium tracking-wide text-muted-foreground shrink-0">Pipeline DAG</h2>
+            <BlockPalette />
+            <span className="ml-auto text-xs text-muted-foreground shrink-0">
               Stream: {isConnected ? "connected" : "reconnecting"}
             </span>
           </div>
-          <ErrorBoundary fallback={<PanelError message="Pipeline view unavailable" />}>
-            {showTemplateSelector ? (
-              <TemplateSelector sessionId={sessionId} onApply={handleTemplateApply} />
-            ) : (
-              <PipelineEditor />
-            )}
-          </ErrorBoundary>
+          <div className="relative min-h-0 flex-1">
+            <div className="absolute right-3 top-3 z-10">
+              <PipelineControls sessionId={sessionId} />
+            </div>
+            <ErrorBoundary fallback={<PanelError message="Pipeline view unavailable" />}>
+              {showTemplateSelector ? (
+                <TemplateSelector sessionId={sessionId} onApply={handleTemplateApply} />
+              ) : (
+                <PipelineEditor />
+              )}
+            </ErrorBoundary>
+          </div>
         </section>
 
         <section className="flex h-full min-h-[340px] flex-col rounded-xl border border-border/80 bg-card/30 p-3 xl:overflow-hidden">
