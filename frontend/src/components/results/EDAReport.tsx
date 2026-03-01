@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -242,6 +242,22 @@ const badgeToneClass: Record<QualityTone, string> = {
   neutral: "border-border/70 bg-muted/40 text-muted-foreground",
 };
 
+const CHART_MARGIN = { top: 10, right: 10, left: 0, bottom: 40 };
+
+const XAXIS_TICK_LINE = { stroke: "hsl(var(--border))" };
+const XAXIS_AXIS_LINE = { stroke: "hsl(var(--border))" };
+const YAXIS_TICK_LINE = { stroke: "hsl(var(--border))" };
+const YAXIS_AXIS_LINE = { stroke: "hsl(var(--border))" };
+
+const TOOLTIP_CURSOR = { fill: "rgba(59,130,246,0.12)" };
+const TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: "hsl(var(--card))",
+  border: "1px solid hsl(var(--border))",
+  borderRadius: "8px",
+};
+
+const BAR_RADIUS: [number, number, number, number] = [4, 4, 0, 0];
+
 export function EDAReport({ results: rawResults }: EDAReportProps) {
   const [metricPreference, setMetricPreference] = useState<"missing" | "mean">("missing");
 
@@ -269,6 +285,58 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
     return { data: rawResults };
   }, [rawResults]);
 
+  const statsRows = useMemo(() => {
+    if (!results) return [];
+    try {
+      const statsSource = getRecord(results, ["statistics", "stats"]);
+      return statsSource ? getStatsRows(results, statsSource) : [];
+    } catch {
+      return [];
+    }
+  }, [results]);
+
+  const missingChartData = useMemo(() => {
+    try {
+      return statsRows
+        .filter((row) => row.missing !== null)
+        .map((row) => ({ name: row.column, value: row.missing ?? 0 }))
+        .slice(0, 12);
+    } catch {
+      return [];
+    }
+  }, [statsRows]);
+
+  const meanChartData = useMemo(() => {
+    try {
+      return statsRows
+        .filter((row) => row.mean !== null)
+        .map((row) => ({ name: row.column, value: row.mean ?? 0 }))
+        .slice(0, 12);
+    } catch {
+      return [];
+    }
+  }, [statsRows]);
+
+  const activeMetric = useMemo(
+    () =>
+      metricPreference === "missing"
+        ? missingChartData.length > 0
+          ? "missing"
+          : "mean"
+        : meanChartData.length > 0
+          ? "mean"
+          : "missing",
+    [metricPreference, missingChartData.length, meanChartData.length],
+  );
+
+  const tooltipFormatter = useCallback(
+    (value: unknown) => {
+      const numeric = Array.isArray(value) ? toNumber(value[0]) : toNumber(value);
+      return [formatNumber(numeric, 2), activeMetric === "missing" ? "Missing" : "Mean"];
+    },
+    [activeMetric],
+  );
+
   if (!results) {
     return (
       <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -280,25 +348,7 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
   const overview = getOverview(results);
   const qualityFlags = getQualityFlags(results);
   const statsSource = getRecord(results, ["statistics", "stats"]);
-  const statsRows = statsSource ? getStatsRows(results, statsSource) : [];
 
-  const missingChartData = statsRows
-    .filter((row) => row.missing !== null)
-    .map((row) => ({ name: row.column, value: row.missing ?? 0 }))
-    .slice(0, 12);
-  const meanChartData = statsRows
-    .filter((row) => row.mean !== null)
-    .map((row) => ({ name: row.column, value: row.mean ?? 0 }))
-    .slice(0, 12);
-
-  const activeMetric =
-    metricPreference === "missing"
-      ? missingChartData.length > 0
-        ? "missing"
-        : "mean"
-      : meanChartData.length > 0
-        ? "mean"
-        : "missing";
   const chartData = activeMetric === "missing" ? missingChartData : meanChartData;
 
   const hasKnownStructure =
@@ -423,13 +473,13 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
           <CardContent>
             <div className="h-64 w-full rounded-lg border border-border/60 bg-background/40 p-2">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 40 }}>
+                <BarChart data={chartData} margin={CHART_MARGIN}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis
                     dataKey="name"
                     stroke="hsl(var(--muted-foreground))"
-                    tickLine={{ stroke: "hsl(var(--border))" }}
-                    axisLine={{ stroke: "hsl(var(--border))" }}
+                    tickLine={XAXIS_TICK_LINE}
+                    axisLine={XAXIS_AXIS_LINE}
                     angle={-28}
                     textAnchor="end"
                     interval={0}
@@ -437,22 +487,15 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
                   />
                   <YAxis
                     stroke="hsl(var(--muted-foreground))"
-                    tickLine={{ stroke: "hsl(var(--border))" }}
-                    axisLine={{ stroke: "hsl(var(--border))" }}
+                    tickLine={YAXIS_TICK_LINE}
+                    axisLine={YAXIS_AXIS_LINE}
                   />
                   <RechartsTooltip
-                    cursor={{ fill: "rgba(59,130,246,0.12)" }}
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                    }}
-                    formatter={(value) => {
-                      const numeric = Array.isArray(value) ? toNumber(value[0]) : toNumber(value);
-                      return [formatNumber(numeric, 2), activeMetric === "missing" ? "Missing" : "Mean"];
-                    }}
+                    cursor={TOOLTIP_CURSOR}
+                    contentStyle={TOOLTIP_CONTENT_STYLE}
+                    formatter={tooltipFormatter}
                   />
-                  <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                  <Bar dataKey="value" fill="#3b82f6" radius={BAR_RADIUS}>
                     {chartData.map((entry) => (
                       <Cell
                         key={entry.name}

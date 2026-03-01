@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { AlertTriangle, TrendingUp } from "lucide-react";
 import {
@@ -92,6 +92,27 @@ const VALUE_KEY_PRIORITY = [
   "amount",
   "signal",
 ];
+
+const COMPOSED_CHART_MARGIN = { top: 16, right: 20, left: 6, bottom: 8 };
+
+const AC_XAXIS_TICK = { fill: "#a1a1aa", fontSize: 12 };
+const AC_XAXIS_TICK_LINE = { stroke: "#3f3f46" };
+const AC_XAXIS_AXIS_LINE = { stroke: "#3f3f46" };
+
+const AC_YAXIS_TICK = { fill: "#a1a1aa", fontSize: 12 };
+const AC_YAXIS_TICK_LINE = { stroke: "#3f3f46" };
+const AC_YAXIS_AXIS_LINE = { stroke: "#3f3f46" };
+
+const AC_TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: "#18181b",
+  border: "1px solid #3f3f46",
+  borderRadius: "0.5rem",
+};
+const AC_TOOLTIP_CURSOR = { stroke: "#52525b", strokeDasharray: "4 4" };
+const AC_TOOLTIP_LABEL_STYLE = { color: "#d4d4d8" };
+const AC_TOOLTIP_ITEM_STYLE = { color: "#e4e4e7" };
+
+const AC_LEGEND_STYLE = { color: "#d4d4d8", fontSize: "12px" };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -562,6 +583,11 @@ export function AnomalyChart({ edaResults, validationResults }: AnomalyChartProp
   const anomalies = useMemo(() => resolveAnomalies(validationResults, seriesData), [seriesData, validationResults]);
   const thresholds = useMemo(() => extractThresholds(validationResults), [validationResults]);
 
+  const formatXAxisTickMemo = useCallback(
+    (value: unknown) => formatXAxisTick(value as string | number),
+    [],
+  );
+
   if (!edaResults && !validationResults) {
     return (
       <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 p-6 text-sm text-muted-foreground">
@@ -612,7 +638,7 @@ export function AnomalyChart({ edaResults, validationResults }: AnomalyChartProp
       <CardContent className="space-y-4">
         <div className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={seriesData} margin={{ top: 16, right: 20, left: 6, bottom: 8 }}>
+            <ComposedChart data={seriesData} margin={COMPOSED_CHART_MARGIN}>
               <defs>
                 <linearGradient id="anomalyAreaGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -622,29 +648,25 @@ export function AnomalyChart({ edaResults, validationResults }: AnomalyChartProp
               <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
               <XAxis
                 dataKey="x"
-                tick={{ fill: "#a1a1aa", fontSize: 12 }}
-                tickLine={{ stroke: "#3f3f46" }}
-                axisLine={{ stroke: "#3f3f46" }}
+                tick={AC_XAXIS_TICK}
+                tickLine={AC_XAXIS_TICK_LINE}
+                axisLine={AC_XAXIS_AXIS_LINE}
                 minTickGap={24}
-                tickFormatter={(value) => formatXAxisTick(value as string | number)}
+                tickFormatter={formatXAxisTickMemo}
               />
               <YAxis
-                tick={{ fill: "#a1a1aa", fontSize: 12 }}
-                tickLine={{ stroke: "#3f3f46" }}
-                axisLine={{ stroke: "#3f3f46" }}
+                tick={AC_YAXIS_TICK}
+                tickLine={AC_YAXIS_TICK_LINE}
+                axisLine={AC_YAXIS_AXIS_LINE}
                 width={62}
               />
               <RechartsTooltip
-                contentStyle={{
-                  backgroundColor: "#18181b",
-                  border: "1px solid #3f3f46",
-                  borderRadius: "0.5rem",
-                }}
-                cursor={{ stroke: "#52525b", strokeDasharray: "4 4" }}
-                labelStyle={{ color: "#d4d4d8" }}
-                itemStyle={{ color: "#e4e4e7" }}
+                contentStyle={AC_TOOLTIP_CONTENT_STYLE}
+                cursor={AC_TOOLTIP_CURSOR}
+                labelStyle={AC_TOOLTIP_LABEL_STYLE}
+                itemStyle={AC_TOOLTIP_ITEM_STYLE}
               />
-              <Legend wrapperStyle={{ color: "#d4d4d8", fontSize: "12px" }} />
+              <Legend wrapperStyle={AC_LEGEND_STYLE} />
               <Area type="monotone" dataKey="value" fill="url(#anomalyAreaGradient)" stroke="none" name="Signal" />
               <Line
                 type="monotone"

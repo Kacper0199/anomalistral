@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, type ReactNode } from "react";
+import React, { Component, type ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,11 @@ export class ErrorBoundary extends Component<Props, State> {
       hasError: true,
       error,
     };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    console.error("[ErrorBoundary] Caught error:", error);
+    console.error("[ErrorBoundary] Component stack:", errorInfo.componentStack);
   }
 
   private handleReset = () => {

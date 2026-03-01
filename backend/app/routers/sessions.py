@@ -29,7 +29,11 @@ def _parse_json(value: str | None) -> dict[str, Any] | None:
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError:
-        return {"raw": value}
+        cleaned = value.replace("NaN", "null").replace("Infinity", "null").replace("-Infinity", "null")
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            return {"raw": value}
     if isinstance(parsed, dict):
         return parsed
     return {"data": parsed}
@@ -164,6 +168,18 @@ async def create_session(payload: SessionCreate, db: AsyncSession = Depends(get_
 @router.get("/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> SessionResponse:
     session = await _get_session_or_404(db, session_id)
+    return _to_response(session)
+
+
+@router.post("/{session_id}/recover", response_model=SessionResponse)
+async def recover_session(session_id: str, db: AsyncSession = Depends(get_db)) -> SessionResponse:
+    session = await _get_session_or_404(db, session_id)
+    stuck_statuses = {"eda_running", "algorithm_running", "codegen_running", "validation_running"}
+    if session.status not in stuck_statuses:
+        return _to_response(session)
+    session.status = "failed"
+    await db.commit()
+    await db.refresh(session)
     return _to_response(session)
 
 
