@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +20,18 @@ from app.services.streaming import StreamManager
 
 MAX_DATASET_CONTEXT_ROWS = 5
 MAX_DATASET_CONTEXT_COLS = 40
+
+
+def _sanitize_for_json(obj: Any) -> Any:
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(item) for item in obj]
+    return obj
 
 
 def _extract_code_block(text: str) -> str:
@@ -126,7 +139,7 @@ class PipelineExecutor:
             )
             if conversation_id:
                 await self._update_session(conversation_id=conversation_id)
-            eda_data = self._to_structured_payload(eda_raw)
+            eda_data = _sanitize_for_json(self._to_structured_payload(eda_raw))
             await self._update_session(eda_results=json.dumps(eda_data))
             await self._publish("eda.completed", {"results": eda_data})
 
@@ -160,7 +173,7 @@ class PipelineExecutor:
             code_output = _extract_code_block(code_output)
             await self._update_session(generated_code=code_output)
             await self._persist_generated_code(code_output)
-            await self._publish("codegen.completed", {"size": len(code_output)})
+            await self._publish("codegen.completed", {"size": len(code_output), "code": code_output})
 
             self._current_phase = "validation"
             await self._set_status("validation_running")
@@ -174,7 +187,7 @@ class PipelineExecutor:
                 ),
                 timeout=120.0,
             )
-            validation_data = self._to_structured_payload(validation_raw)
+            validation_data = _sanitize_for_json(self._to_structured_payload(validation_raw))
             # Ensure status is NOT validation_running anymore before publishing completion
             # This prevents a race where loadSession(sessionId) on frontend returns 'validation_running'
             # after receiving 'validation.completed' event.

@@ -43,7 +43,7 @@ export function useSSE(sessionId: string | null) {
 
     const seq = useStreamStore.getState().lastSeq;
 
-    void fetchEventSource(`${API_URL}/stream/${sessionId}`, {
+    void fetchEventSource(`${API_URL}/stream/${sessionId}?lastEventId=${seq}`, {
       method: "GET",
       signal: controller.signal,
       openWhenHidden: true,

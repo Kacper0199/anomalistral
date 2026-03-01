@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useParams } from "next/navigation";
 
@@ -17,6 +17,7 @@ import { ValidationReport } from "@/components/results/ValidationReport";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/hooks/useSession";
 import { useSSE } from "@/hooks/useSSE";
+import { API_URL } from "@/lib/api";
 import { usePipelineStore } from "@/stores/pipelineStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useStreamStore } from "@/stores/streamStore";
@@ -156,6 +157,25 @@ export default function SessionPage() {
     }
   }, [sessionStatus, setNodeStatus]);
 
+  const isStuckRef = useRef(false);
+  const [isStuck, setIsStuck] = useState(false);
+  useEffect(() => {
+    const stuckStatuses = new Set(["eda_running", "algorithm_running", "codegen_running", "validation_running"]);
+    const shouldCheck = currentSession && stuckStatuses.has(currentSession.status);
+    if (!shouldCheck) {
+      isStuckRef.current = false;
+      const interval = setInterval(() => {
+        setIsStuck(false);
+      }, 30_000);
+      return () => clearInterval(interval);
+    }
+    const created = new Date(currentSession.created_at).getTime();
+    const interval = setInterval(() => {
+      setIsStuck(Date.now() - created > 5 * 60 * 1000);
+    }, 1_000);
+    return () => clearInterval(interval);
+  }, [currentSession]);
+
   useEffect(() => {
     if (events.length === 0) {
       return;
@@ -208,9 +228,6 @@ export default function SessionPage() {
         const results = getPayloadRecord(event.payload, "results");
         if (results) {
           updateSession((session) => ({ ...session, eda_results: results }));
-        }
-        if (sessionId) {
-          void loadSession(sessionId);
         }
         addMessage({
           id: `${event.seq}`,
@@ -266,10 +283,12 @@ export default function SessionPage() {
       if (event.type === "codegen.completed") {
         setNodeStatus("codegen", "success");
         setNodeData("codegen", { completedAt: event.ts, previewData: "Code generated" });
-        updateSession((session) => ({ ...session, status: "validation_running" }));
-        if (sessionId) {
-          void loadSession(sessionId);
-        }
+        const generatedCodeValue = getPayloadString(event.payload, "code");
+        updateSession((session) => ({
+          ...session,
+          status: "validation_running",
+          ...(generatedCodeValue ? { generated_code: generatedCodeValue } : {}),
+        }));
         addMessage({
           id: `${event.seq}`,
           role: "system",
@@ -299,9 +318,6 @@ export default function SessionPage() {
         if (validation) {
           updateSession((session) => ({ ...session, validation_results: validation }));
         }
-        if (sessionId) {
-          void loadSession(sessionId);
-        }
         addMessage({
           id: `${event.seq}`,
           role: "system",
@@ -319,9 +335,6 @@ export default function SessionPage() {
           content: "Pipeline completed successfully.",
           timestamp: event.ts,
         });
-        if (sessionId) {
-          void loadSession(sessionId);
-        }
         continue;
       }
 
@@ -357,7 +370,7 @@ export default function SessionPage() {
         });
       }
     }
-  }, [addMessage, events, loadSession, sessionId, setNodeData, setNodeStatus, setSession]);
+  }, [addMessage, events, sessionId, setNodeData, setNodeStatus, setSession]);
 
   const edaResults = useMemo(
     () => currentSession?.eda_results ?? null,
@@ -396,6 +409,17 @@ export default function SessionPage() {
             <span className="text-xs text-muted-foreground">
               Stream: {isConnected ? "connected" : "reconnecting"}
             </span>
+            {isStuck && (
+              <button
+                className="rounded bg-amber-600/80 px-2 py-0.5 text-xs text-white hover:bg-amber-600"
+                onClick={async () => {
+                  await fetch(`${API_URL}/sessions/${sessionId}/recover`, { method: "POST" });
+                  void loadSession(sessionId);
+                }}
+              >
+                Recover stuck session
+              </button>
+            )}
           </div>
           <ErrorBoundary fallback={<PanelError message="Pipeline view unavailable" />}>
             <PipelineEditor />

@@ -287,27 +287,35 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
 
   const statsRows = useMemo(() => {
     if (!results) return [];
-    const statsSource = getRecord(results, ["statistics", "stats"]);
-    return statsSource ? getStatsRows(results, statsSource) : [];
+    try {
+      const statsSource = getRecord(results, ["statistics", "stats"]);
+      return statsSource ? getStatsRows(results, statsSource) : [];
+    } catch {
+      return [];
+    }
   }, [results]);
 
-  const missingChartData = useMemo(
-    () =>
-      statsRows
+  const missingChartData = useMemo(() => {
+    try {
+      return statsRows
         .filter((row) => row.missing !== null)
         .map((row) => ({ name: row.column, value: row.missing ?? 0 }))
-        .slice(0, 12),
-    [statsRows],
-  );
+        .slice(0, 12);
+    } catch {
+      return [];
+    }
+  }, [statsRows]);
 
-  const meanChartData = useMemo(
-    () =>
-      statsRows
+  const meanChartData = useMemo(() => {
+    try {
+      return statsRows
         .filter((row) => row.mean !== null)
         .map((row) => ({ name: row.column, value: row.mean ?? 0 }))
-        .slice(0, 12),
-    [statsRows],
-  );
+        .slice(0, 12);
+    } catch {
+      return [];
+    }
+  }, [statsRows]);
 
   const activeMetric = useMemo(
     () =>
