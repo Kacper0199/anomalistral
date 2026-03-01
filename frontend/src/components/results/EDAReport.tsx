@@ -177,8 +177,8 @@ function PercentileBarChart({ points }: { points: PercentilePoint[] }) {
             <span className="w-14 shrink-0 text-muted-foreground">{point.label}</span>
             <div className="relative h-5 flex-1 rounded bg-muted/30">
               <div
-                className={\`absolute inset-y-0 left-0 rounded \${color} transition-all\`}
-                style={{ width: \`\${Math.max(pct, 2)}%\` }}
+                className={`absolute inset-y-0 left-0 rounded ${color} transition-all`}
+                style={{ width: `${Math.max(pct, 2)}%` }}
               />
             </div>
             <span className="w-20 shrink-0 text-right tabular-nums text-muted-foreground">
@@ -326,7 +326,7 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
                 <TabsList className="flex h-auto flex-wrap gap-1 bg-transparent p-0">
                   {visibleColumnTabs.map((row) => {
                     const isTruncated = row.column.length > 20;
-                    const displayName = isTruncated ? \`\${row.column.slice(0, 20)}…\` : row.column;
+                    const displayName = isTruncated ? `${row.column.slice(0, 20)}…` : row.column;
                     const trigger = (
                       <TabsTrigger
                         key={row.column}
