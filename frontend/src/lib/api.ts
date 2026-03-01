@@ -1,4 +1,19 @@
-import type { Session, UploadResponse } from "@/types";
+import type {
+  Session,
+  UploadResponse,
+  DAGDefinition,
+  DAGValidationResult,
+  AddBlockRequest,
+  BlockResponse,
+  BlockConfig,
+  AddEdgeRequest,
+  AddEdgeResponse,
+  PipelineControlRequest,
+  PipelineControlResponse,
+  TemplateResponse,
+  SessionBlockMessage,
+  BlockDefinitionResponse,
+} from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
@@ -91,6 +106,113 @@ export function updateDAG(sessionId: string, dagConfig: Record<string, unknown>)
     method: "PUT",
     body: JSON.stringify({ dag_config: dagConfig }),
   });
+}
+
+export function getDAG(sessionId: string): Promise<DAGDefinition> {
+  return request<DAGDefinition>(`/sessions/${sessionId}/dag`);
+}
+
+export function saveDAG(sessionId: string, dag: DAGDefinition): Promise<DAGDefinition> {
+  return request<DAGDefinition>(`/sessions/${sessionId}/dag`, {
+    method: "PUT",
+    body: JSON.stringify({ dag }),
+  });
+}
+
+export function validateDAG(sessionId: string): Promise<DAGValidationResult> {
+  return request<DAGValidationResult>(`/sessions/${sessionId}/dag/validate`, {
+    method: "POST",
+  });
+}
+
+export function addBlock(sessionId: string, req: AddBlockRequest): Promise<BlockResponse> {
+  return request<BlockResponse>(`/sessions/${sessionId}/blocks`, {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function updateBlock(
+  sessionId: string,
+  blockId: string,
+  config: BlockConfig
+): Promise<BlockResponse> {
+  return request<BlockResponse>(`/sessions/${sessionId}/blocks/${blockId}`, {
+    method: "PUT",
+    body: JSON.stringify({ config }),
+  });
+}
+
+export function deleteBlock(
+  sessionId: string,
+  blockId: string
+): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/sessions/${sessionId}/blocks/${blockId}`, {
+    method: "DELETE",
+  });
+}
+
+export function addEdge(sessionId: string, req: AddEdgeRequest): Promise<AddEdgeResponse> {
+  return request<AddEdgeResponse>(`/sessions/${sessionId}/edges`, {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function deleteEdge(
+  sessionId: string,
+  edgeId: string
+): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/sessions/${sessionId}/edges/${edgeId}`, {
+    method: "DELETE",
+  });
+}
+
+export function controlPipeline(
+  sessionId: string,
+  req: PipelineControlRequest
+): Promise<PipelineControlResponse> {
+  return request<PipelineControlResponse>(`/sessions/${sessionId}/pipeline/control`, {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function applyTemplate(sessionId: string, templateId: string): Promise<DAGDefinition> {
+  return request<DAGDefinition>(`/sessions/${sessionId}/apply-template`, {
+    method: "POST",
+    body: JSON.stringify({ template_id: templateId }),
+  });
+}
+
+export function getTemplates(): Promise<TemplateResponse[]> {
+  return request<TemplateResponse[]>("/templates");
+}
+
+export function getTemplate(templateId: string): Promise<TemplateResponse> {
+  return request<TemplateResponse>(`/templates/${templateId}`);
+}
+
+export function getBlockMessages(
+  sessionId: string,
+  blockId: string
+): Promise<SessionBlockMessage[]> {
+  return request<SessionBlockMessage[]>(`/sessions/${sessionId}/blocks/${blockId}/messages`);
+}
+
+export function sendBlockChat(
+  sessionId: string,
+  blockId: string,
+  message: string
+): Promise<{ status: string }> {
+  return request<{ status: string }>(`/sessions/${sessionId}/blocks/${blockId}/chat`, {
+    method: "POST",
+    body: JSON.stringify({ block_id: blockId, message }),
+  });
+}
+
+export function getBlockDefinitions(): Promise<BlockDefinitionResponse[]> {
+  return request<BlockDefinitionResponse[]>("/block-definitions");
 }
 
 export { API_URL };

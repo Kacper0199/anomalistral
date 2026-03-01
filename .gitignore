@@ -47,3 +47,4 @@ next-env.d.ts
 *.log
 *.pem
 .vercel
+DAG_WORKBENCH_PLAN.md

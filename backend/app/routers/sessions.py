@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.deps import get_db, get_mistral_client
 from app.models.database import Event, Session
-from app.models.schemas import DAGUpdate, SSEEvent, SessionCommand, SessionCreate, SessionResponse
+from app.models.schemas import SSEEvent, SessionCommand, SessionCreate, SessionResponse
 from app.services.streaming import StreamManager, stream_manager
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -226,19 +226,6 @@ async def send_command(
         payload=json.dumps(command.payload or {}),
     )
     db.add(event)
-    await db.commit()
-    await db.refresh(session)
-    return _to_response(session)
-
-
-@router.put("/{session_id}/dag", response_model=SessionResponse)
-async def update_dag(
-    session_id: str,
-    payload: DAGUpdate,
-    db: AsyncSession = Depends(get_db),
-) -> SessionResponse:
-    session = await _get_session_or_404(db, session_id)
-    session.dag_config = json.dumps(payload.dag_config)
     await db.commit()
     await db.refresh(session)
     return _to_response(session)

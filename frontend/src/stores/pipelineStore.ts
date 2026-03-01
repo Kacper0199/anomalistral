@@ -12,107 +12,184 @@ import {
 } from "@xyflow/react";
 import { create } from "zustand";
 
-import type { PipelineNodeData } from "@/types";
+import type { BlockType, BlockStatus, DAGDefinition, NodePosition, PipelineNodeData } from "@/types";
 
 export type PipelineFlowNode = Node<PipelineNodeData, "pipelineNode">;
 
-function createDefaultNodes(): PipelineFlowNode[] {
-  return [
-    {
-      id: "upload",
-      type: "pipelineNode",
-      position: { x: 0, y: 100 },
-      data: { label: "Upload", status: "idle", type: "upload" },
-    },
-    {
-      id: "eda",
-      type: "pipelineNode",
-      position: { x: 320, y: 100 },
-      data: { label: "EDA", status: "idle", type: "eda" },
-    },
-    {
-      id: "algorithm",
-      type: "pipelineNode",
-      position: { x: 640, y: 100 },
-      data: { label: "Algorithm Selection", status: "idle", type: "algorithm" },
-    },
-    {
-      id: "codegen",
-      type: "pipelineNode",
-      position: { x: 960, y: 100 },
-      data: { label: "Code Generation", status: "idle", type: "codegen" },
-    },
-    {
-      id: "validation",
-      type: "pipelineNode",
-      position: { x: 1280, y: 100 },
-      data: { label: "Validation", status: "idle", type: "validation" },
-    },
-  ];
-}
+const BLOCK_LABELS: Record<BlockType, string> = {
+  upload: "Upload",
+  eda: "EDA",
+  normalization: "Normalization",
+  imputation: "Imputation",
+  algorithm: "Algorithm",
+  aggregator: "Aggregator",
+  anomaly_viz: "Anomaly Visualization",
+};
 
-function createDefaultEdges(): Edge[] {
-  return [
-    { id: "e-upload-eda", source: "upload", target: "eda" },
-    { id: "e-eda-algorithm", source: "eda", target: "algorithm" },
-    { id: "e-algorithm-codegen", source: "algorithm", target: "codegen" },
-    { id: "e-codegen-validation", source: "codegen", target: "validation" },
-  ];
-}
+type PipelineStatus = "idle" | "running" | "paused" | "completed" | "error";
 
 interface PipelineStore {
   nodes: PipelineFlowNode[];
   edges: Edge[];
+  sessionId: string | null;
+  isModified: boolean;
+  pipelineStatus: PipelineStatus;
   onNodesChange: OnNodesChange<PipelineFlowNode>;
   onEdgesChange: OnEdgesChange<Edge>;
   onConnect: OnConnect;
-  setNodeStatus: (nodeId: string, status: PipelineNodeData["status"]) => void;
+  setNodeStatus: (nodeId: string, status: BlockStatus) => void;
   setNodeData: (nodeId: string, data: Partial<PipelineNodeData>) => void;
   resetPipeline: () => void;
+  loadFromDAG: (dag: DAGDefinition, sessionId: string) => void;
+  toDAGDefinition: () => DAGDefinition;
+  addNode: (blockType: BlockType, position: NodePosition) => void;
+  removeNode: (nodeId: string) => void;
+  removeEdge: (edgeId: string) => void;
+  setPipelineStatus: (status: PipelineStatus) => void;
+  setModified: (modified: boolean) => void;
+  resetDownstream: (fromNodeId: string) => void;
 }
 
-export const usePipelineStore = create<PipelineStore>((set) => ({
-  nodes: createDefaultNodes(),
-  edges: createDefaultEdges(),
+export const usePipelineStore = create<PipelineStore>((set, get) => ({
+  nodes: [],
+  edges: [],
+  sessionId: null,
+  isModified: false,
+  pipelineStatus: "idle",
+
   onNodesChange: (changes) =>
     set((state) => ({
       nodes: applyNodeChanges<PipelineFlowNode>(changes, state.nodes),
     })),
+
   onEdgesChange: (changes) =>
     set((state) => ({
       edges: applyEdgeChanges(changes, state.edges),
     })),
+
   onConnect: (connection) =>
     set((state) => ({
       edges: addEdge(connection, state.edges),
+      isModified: true,
     })),
+
   setNodeStatus: (nodeId, status) =>
     set((state) => ({
       nodes: state.nodes.map((node) =>
         node.id === nodeId
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                status,
-              },
-            }
+          ? { ...node, data: { ...node.data, status } }
           : node
       ),
     })),
+
   setNodeData: (nodeId, data) =>
     set((state) => ({
       nodes: state.nodes.map((node) =>
         node.id === nodeId
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                ...data,
-              },
-            }
+          ? { ...node, data: { ...node.data, ...data } }
           : node
       ),
     })),
-  resetPipeline: () => set({ nodes: createDefaultNodes(), edges: createDefaultEdges() }),
+
+  resetPipeline: () =>
+    set({ nodes: [], edges: [], sessionId: null, isModified: false, pipelineStatus: "idle" }),
+
+  loadFromDAG: (dag, sessionId) => {
+    const nodes: PipelineFlowNode[] = dag.nodes.map((dagNode) => ({
+      id: dagNode.id,
+      type: "pipelineNode" as const,
+      position: dagNode.position,
+      data: {
+        label: BLOCK_LABELS[dagNode.block_type] ?? dagNode.block_type,
+        status: dagNode.status,
+        type: dagNode.block_type,
+      },
+    }));
+
+    const edges: Edge[] = dag.edges.map((dagEdge) => ({
+      id: dagEdge.id,
+      source: dagEdge.source,
+      target: dagEdge.target,
+      sourceHandle: dagEdge.source_handle ?? undefined,
+      targetHandle: dagEdge.target_handle ?? undefined,
+    }));
+
+    set({ nodes, edges, sessionId, isModified: false });
+  },
+
+  toDAGDefinition: (): DAGDefinition => {
+    const { nodes, edges } = get();
+    return {
+      nodes: nodes.map((node) => ({
+        id: node.id,
+        block_type: node.data.type,
+        position: node.position,
+        config: null,
+        status: node.data.status,
+      })),
+      edges: edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        source_handle: edge.sourceHandle ?? null,
+        target_handle: edge.targetHandle ?? null,
+      })),
+    };
+  },
+
+  addNode: (blockType, position) =>
+    set((state) => {
+      const newNode: PipelineFlowNode = {
+        id: crypto.randomUUID(),
+        type: "pipelineNode",
+        position,
+        data: {
+          label: BLOCK_LABELS[blockType] ?? blockType,
+          status: "idle",
+          type: blockType,
+        },
+      };
+      return { nodes: [...state.nodes, newNode], isModified: true };
+    }),
+
+  removeNode: (nodeId) =>
+    set((state) => ({
+      nodes: state.nodes.filter((n) => n.id !== nodeId),
+      edges: state.edges.filter((e) => e.source !== nodeId && e.target !== nodeId),
+      isModified: true,
+    })),
+
+  removeEdge: (edgeId) =>
+    set((state) => ({
+      edges: state.edges.filter((e) => e.id !== edgeId),
+      isModified: true,
+    })),
+
+  setPipelineStatus: (status) => set({ pipelineStatus: status }),
+
+  setModified: (modified) => set({ isModified: modified }),
+
+  resetDownstream: (fromNodeId) =>
+    set((state) => {
+      const reachable = new Set<string>();
+      const queue = [fromNodeId];
+
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        for (const edge of state.edges) {
+          if (edge.source === current && !reachable.has(edge.target)) {
+            reachable.add(edge.target);
+            queue.push(edge.target);
+          }
+        }
+      }
+
+      return {
+        nodes: state.nodes.map((node) =>
+          reachable.has(node.id)
+            ? { ...node, data: { ...node.data, status: "idle" as BlockStatus } }
+            : node
+        ),
+      };
+    }),
 }));

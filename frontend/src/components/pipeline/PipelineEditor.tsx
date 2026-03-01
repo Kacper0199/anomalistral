@@ -1,46 +1,157 @@
 "use client";
 
+import { useCallback } from "react";
 import {
   Background,
+  BackgroundVariant,
+  ConnectionLineType,
+  Controls,
+  MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  useReactFlow,
   type Edge,
+  type NodeMouseHandler,
 } from "@xyflow/react";
 
 import { usePipelineStore, type PipelineFlowNode } from "@/stores/pipelineStore";
+import type { BlockType, PipelineNodeData } from "@/types";
 
+import { DAGToolbar } from "./DAGToolbar";
+import { PipelineEdge } from "./PipelineEdge";
 import { PipelineNode } from "./PipelineNode";
 
 import "@xyflow/react/dist/style.css";
+
+interface PipelineEditorProps {
+  onBlockDoubleClick?: (blockId: string) => void;
+}
 
 const nodeTypes = {
   pipelineNode: PipelineNode,
 };
 
-export function PipelineEditor() {
-  const nodes = usePipelineStore((state) => state.nodes);
-  const edges = usePipelineStore((state) => state.edges);
-  const onNodesChange = usePipelineStore((state) => state.onNodesChange);
-  const onEdgesChange = usePipelineStore((state) => state.onEdgesChange);
-  const onConnect = usePipelineStore((state) => state.onConnect);
+const edgeTypes = {
+  default: PipelineEdge,
+};
+
+const defaultEdgeOptions = {
+  type: "default",
+  animated: true,
+};
+
+const fitViewOptions = {
+  padding: 0.3,
+  maxZoom: 1.2,
+};
+
+const snapGrid: [number, number] = [20, 20];
+
+const backgroundGap: [number, number] = [20, 20];
+
+const proOptions = { hideAttribution: true };
+
+function miniMapNodeColor(node: PipelineFlowNode): string {
+  const status = (node.data as PipelineNodeData).status;
+  switch (status) {
+    case "running":
+      return "#3b82f6";
+    case "success":
+      return "#10b981";
+    case "error":
+      return "#ef4444";
+    case "paused":
+      return "#f59e0b";
+    default:
+      return "#52525b";
+  }
+}
+
+function FlowCanvas({ onBlockDoubleClick }: PipelineEditorProps) {
+  const { screenToFlowPosition } = useReactFlow();
+  const nodes = usePipelineStore((s) => s.nodes);
+  const edges = usePipelineStore((s) => s.edges);
+  const sessionId = usePipelineStore((s) => s.sessionId);
+  const onNodesChange = usePipelineStore((s) => s.onNodesChange);
+  const onEdgesChange = usePipelineStore((s) => s.onEdgesChange);
+  const onConnect = usePipelineStore((s) => s.onConnect);
+
+  const handleNodeDoubleClick: NodeMouseHandler<PipelineFlowNode> = useCallback(
+    (_event, node) => {
+      onBlockDoubleClick?.(node.id);
+    },
+    [onBlockDoubleClick]
+  );
+
+  const handleDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const blockType = event.dataTransfer.getData(
+        "application/anomalistral-block"
+      ) as BlockType;
+      if (!blockType) return;
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      usePipelineStore.getState().addNode(blockType, position);
+    },
+    [screenToFlowPosition]
+  );
 
   return (
-    <ReactFlowProvider>
-      <div className="h-full min-h-[420px] w-full rounded-xl border border-border/80 bg-card/40">
+    <div className="flex h-full flex-col gap-2">
+      <DAGToolbar sessionId={sessionId} />
+      <div
+        className="relative h-full min-h-[420px] w-full flex-1 overflow-hidden rounded-xl border border-border/80 bg-card/40"
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
         <ReactFlow<PipelineFlowNode, Edge>
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onNodeDoubleClick={handleNodeDoubleClick}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          defaultEdgeOptions={defaultEdgeOptions}
           fitView
-          fitViewOptions={{ padding: 0.3 }}
-          proOptions={{ hideAttribution: true }}
+          fitViewOptions={fitViewOptions}
+          snapToGrid
+          snapGrid={snapGrid}
+          connectionLineType={ConnectionLineType.SmoothStep}
+          proOptions={proOptions}
         >
-          <Background gap={18} size={1} color="var(--border)" />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={backgroundGap}
+            size={1}
+            color="var(--border)"
+          />
+          <Controls />
+          <MiniMap<PipelineFlowNode>
+            nodeColor={miniMapNodeColor}
+            pannable
+            zoomable
+            className="!border-border/60 !bg-card/80"
+          />
         </ReactFlow>
       </div>
+    </div>
+  );
+}
+
+export function PipelineEditor({ onBlockDoubleClick }: PipelineEditorProps) {
+  return (
+    <ReactFlowProvider>
+      <FlowCanvas onBlockDoubleClick={onBlockDoubleClick} />
     </ReactFlowProvider>
   );
 }
