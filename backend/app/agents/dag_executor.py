@@ -378,8 +378,8 @@ class DAGExecutor:
             return await self._execute_agent_block(
                 block_node=block_node,
                 agent_type="algorithm",
-                prompt=self._algorithm_prompt(eda_data),
-                use_file=False,
+                prompt=self._algorithm_prompt(eda_data, config),
+                use_file=True,
                 session=session,
             )
 
@@ -438,7 +438,7 @@ class DAGExecutor:
                     session.mistral_file_id = file_id
                     await self.db.commit()
 
-        inputs = _build_inputs_with_file(prompt_override or prompt, file_id)
+        inputs = _build_inputs_with_file(prompt, file_id)
         raw_response = await asyncio.to_thread(
             retry_sync,
             self.client.beta.conversations.start,
@@ -631,11 +631,13 @@ class DAGExecutor:
             "trend, seasonality, stationarity, statistics, column_types, data_quality_flags, notes."
         )
 
-    def _algorithm_prompt(self, eda_data: Any) -> str:
+    def _algorithm_prompt(self, eda_data: Any, config: dict) -> str:
         eda_json = json.dumps(eda_data) if isinstance(eda_data, dict) else str(eda_data)
-        return (
-            "Recommend the top 3 anomaly detection algorithms based on this EDA JSON: "
-            f"{eda_json}. "
-            "Return strict JSON with key recommendations as an array of objects containing "
-            "rank, algorithm, fit_reason, risks, compute_cost."
+        prompt = (
+            "You are a Data Scientist. Write and execute Python code using the code_interpreter tool to detect anomalies in the uploaded dataset. "
+            "You must output a strict JSON object with two keys: 'code' (the exact Python code you executed) and 'anomaly_scores' "
+            f"(a list of 1s and 0s, where 1 is anomaly, matching the row count). EDA context: {eda_json}."
         )
+        if config.get("prompt_override"):
+            prompt += f" User instructions: {config['prompt_override']}"
+        return prompt

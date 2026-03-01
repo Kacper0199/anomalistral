@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,12 +11,10 @@ interface EDAReportProps {
 }
 
 type UnknownRecord = Record<string, unknown>;
-type QualityTone = "green" | "yellow" | "red" | "neutral";
 
 interface OverviewData {
   rowCount: number | null;
   columnCount: number | null;
-  summary: string | null;
 }
 
 interface StatsRow {
@@ -29,29 +27,11 @@ interface StatsRow {
   missing: number | null;
 }
 
-interface QualityFlag {
-  label: string;
-  value: string;
-  tone: QualityTone;
-}
-
-interface BarDatum {
-  name: string;
-  value: number;
-}
-
 interface PercentilePoint {
   label: string;
   value: number;
   isMedian: boolean;
 }
-
-const TONE_CLASSES: Record<QualityTone, string> = {
-  green: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
-  yellow: "text-amber-400 bg-amber-500/10 border-amber-500/30",
-  red: "text-red-400 bg-red-500/10 border-red-500/30",
-  neutral: "text-muted-foreground bg-muted/30 border-border/60",
-};
 
 const MAX_COLUMN_TABS = 8;
 
@@ -111,22 +91,7 @@ const formatInt = (value: number | null): string => {
   return Math.round(value).toLocaleString();
 };
 
-const prettyLabel = (value: string): string =>
-  value
-    .replace(/[_-]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^./, (s) => s.toUpperCase());
-
 const getOverview = (results: UnknownRecord): OverviewData => {
-  const summaryValue = getValue(results, ["summary", "overview", "description"]);
-  const summary =
-    toText(summaryValue) ??
-    (isRecord(summaryValue)
-      ? toText(getValue(summaryValue, ["summary", "text", "description", "details"]))
-      : null);
-
   const stats = getRecord(results, ["statistics", "stats"]);
 
   let rowCount = toNumber(getValue(results, ["row_count", "rows", "rowCount", "total_rows"]));
@@ -140,79 +105,7 @@ const getOverview = (results: UnknownRecord): OverviewData => {
     columnCount = Array.isArray(colsVal) ? colsVal.length : toNumber(colsVal);
   }
 
-  return { rowCount, columnCount, summary };
-};
-
-const scoreTone = (value: number): QualityTone => {
-  const normalized = value <= 1 ? value * 100 : value;
-  if (normalized >= 80) {
-    return "green";
-  }
-  if (normalized >= 50) {
-    return "yellow";
-  }
-  return "red";
-};
-
-const textTone = (value: string): QualityTone => {
-  const lower = value.toLowerCase();
-  if (["good", "high", "pass", "ok", "clean", "healthy"].some((k) => lower.includes(k))) {
-    return "green";
-  }
-  if (["warn", "medium", "moderate", "fair"].some((k) => lower.includes(k))) {
-    return "yellow";
-  }
-  if (["low", "bad", "poor", "critical", "fail", "error"].some((k) => lower.includes(k))) {
-    return "red";
-  }
-  return "neutral";
-};
-
-const parseQualityFlag = (label: string, value: unknown): QualityFlag | null => {
-  if (typeof value === "boolean") {
-    return { label: prettyLabel(label), value: value ? "Pass" : "Fail", tone: value ? "green" : "red" };
-  }
-
-  const numeric = toNumber(value);
-  if (numeric !== null) {
-    const display = numeric <= 1 ? `${(numeric * 100).toFixed(0)}%` : formatNumber(numeric, 1);
-    return { label: prettyLabel(label), value: display, tone: scoreTone(numeric) };
-  }
-
-  const text = toText(value);
-  if (text) {
-    return { label: prettyLabel(label), value: text, tone: textTone(text) };
-  }
-
-  if (isRecord(value)) {
-    const nested =
-      getValue(value, ["score", "value", "ratio", "percentage", "percent", "status", "level", "state"]) ??
-      Object.values(value)[0];
-    return parseQualityFlag(label, nested);
-  }
-
-  return null;
-};
-
-const getQualityFlags = (results: UnknownRecord): QualityFlag[] => {
-  const qualityRecord = getRecord(results, ["data_quality_flags", "data_quality", "quality", "quality_flags", "quality_metrics"]);
-  const source =
-    qualityRecord ??
-    Object.fromEntries(
-      Object.entries(results).filter(([key]) => key.toLowerCase().includes("quality") || key.toLowerCase().includes("score")),
-    );
-
-  return Object.entries(source)
-    .flatMap(([key, value]) => {
-      if (isRecord(value)) {
-        return Object.entries(value).map(([subKey, subValue]) =>
-          parseQualityFlag(`${prettyLabel(key)} ${prettyLabel(subKey)}`, subValue),
-        );
-      }
-      return [parseQualityFlag(key, value)];
-    })
-    .filter((flag): flag is QualityFlag => flag !== null)
-    .slice(0, 12);
+  return { rowCount, columnCount };
 };
 
 const getStatsRows = (results: UnknownRecord, statsSource: UnknownRecord): StatsRow[] => {
@@ -264,35 +157,6 @@ const buildPercentilePoints = (row: StatsRow, rawRecord: UnknownRecord | null): 
   ];
 };
 
-function CSSBarChart({ data, metricType }: { data: BarDatum[]; metricType: "missing" | "mean" }) {
-  const maxValue = Math.max(...data.map((d) => Math.abs(d.value)), 1);
-
-  return (
-    <div className="space-y-1.5">
-      {data.map((entry) => {
-        const pct = Math.min((Math.abs(entry.value) / maxValue) * 100, 100);
-        const color = metricType === "missing" && entry.value > 0 ? "bg-amber-500" : "bg-blue-500";
-        return (
-          <div key={entry.name} className="flex items-center gap-2 text-xs">
-            <span className="w-24 shrink-0 truncate text-muted-foreground" title={entry.name}>
-              {entry.name}
-            </span>
-            <div className="relative h-5 flex-1 rounded bg-muted/30">
-              <div
-                className={`absolute inset-y-0 left-0 rounded ${color} transition-all`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="w-16 shrink-0 text-right tabular-nums text-muted-foreground">
-              {formatNumber(entry.value, 1)}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function PercentileBarChart({ points }: { points: PercentilePoint[] }) {
   if (!points.length) {
     return <p className="text-xs text-muted-foreground">No percentile data available.</p>;
@@ -313,8 +177,8 @@ function PercentileBarChart({ points }: { points: PercentilePoint[] }) {
             <span className="w-14 shrink-0 text-muted-foreground">{point.label}</span>
             <div className="relative h-5 flex-1 rounded bg-muted/30">
               <div
-                className={`absolute inset-y-0 left-0 rounded ${color} transition-all`}
-                style={{ width: `${Math.max(pct, 2)}%` }}
+                className={\`absolute inset-y-0 left-0 rounded \${color} transition-all\`}
+                style={{ width: \`\${Math.max(pct, 2)}%\` }}
               />
             </div>
             <span className="w-20 shrink-0 text-right tabular-nums text-muted-foreground">
@@ -363,8 +227,6 @@ function ColumnTab({ row, rawRecord }: { row: StatsRow; rawRecord: UnknownRecord
 }
 
 export function EDAReport({ results: rawResults }: EDAReportProps) {
-  const [metricPreference, setMetricPreference] = useState<"missing" | "mean">("missing");
-
   const results = useMemo((): Record<string, unknown> | null => {
     if (!rawResults) {
       return null;
@@ -416,42 +278,6 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
     [results],
   );
 
-  const missingChartData = useMemo(() => {
-    try {
-      return statsRows
-        .filter((row) => row.missing !== null)
-        .map((row) => ({ name: row.column, value: row.missing ?? 0 }))
-        .slice(0, 12);
-    } catch {
-      return [];
-    }
-  }, [statsRows]);
-
-  const meanChartData = useMemo(() => {
-    try {
-      return statsRows
-        .filter((row) => row.mean !== null)
-        .map((row) => ({ name: row.column, value: row.mean ?? 0 }))
-        .slice(0, 12);
-    } catch {
-      return [];
-    }
-  }, [statsRows]);
-
-  const activeMetric = useMemo(
-    () =>
-      metricPreference === "missing"
-        ? missingChartData.length > 0
-          ? "missing"
-          : "mean"
-        : meanChartData.length > 0
-          ? "mean"
-          : "missing",
-    [metricPreference, missingChartData.length, meanChartData.length],
-  );
-
-  const chartData = activeMetric === "missing" ? missingChartData : meanChartData;
-
   if (!results) {
     return (
       <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -461,22 +287,6 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
   }
 
   const overview = getOverview(results);
-  const qualityFlags = getQualityFlags(results);
-
-  const hasKnownStructure =
-    overview.rowCount !== null ||
-    overview.columnCount !== null ||
-    Boolean(overview.summary) ||
-    qualityFlags.length > 0 ||
-    Boolean(statsSource);
-
-  if (!hasKnownStructure) {
-    return (
-      <pre className="max-h-[380px] overflow-auto rounded-lg border border-border/80 bg-muted/30 p-4 text-xs leading-relaxed">
-        {JSON.stringify(results, null, 2)}
-      </pre>
-    );
-  }
 
   return (
     <TooltipProvider>
@@ -485,7 +295,7 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Overview</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
                 <div className="text-xs text-muted-foreground">Rows</div>
@@ -496,65 +306,8 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
                 <div className="mt-1 text-2xl font-semibold tracking-tight">{formatInt(overview.columnCount)}</div>
               </div>
             </div>
-            {overview.summary ? <p className="text-sm leading-relaxed text-muted-foreground">{overview.summary}</p> : null}
           </CardContent>
         </Card>
-
-        {qualityFlags.length > 0 ? (
-          <Card className="border-border/70 bg-card/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Data Quality</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {qualityFlags.map((flag) => (
-                  <div
-                    key={flag.label}
-                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${TONE_CLASSES[flag.tone]}`}
-                  >
-                    <span className="text-muted-foreground/80">{flag.label}:</span>
-                    <span>{flag.value}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {chartData.length > 0 ? (
-          <Card className="border-border/70 bg-card/50">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="text-sm font-medium">Distribution Preview</CardTitle>
-                {missingChartData.length > 0 && meanChartData.length > 0 ? (
-                  <div className="inline-flex rounded-md border border-border/70 bg-muted/20 p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setMetricPreference("missing")}
-                      className={`rounded px-2 py-1 text-xs transition-colors ${
-                        activeMetric === "missing" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      Missing
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMetricPreference("mean")}
-                      className={`rounded px-2 py-1 text-xs transition-colors ${
-                        activeMetric === "mean" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      Mean
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <CSSBarChart data={chartData} metricType={activeMetric} />
-            </CardContent>
-          </Card>
-        ) : null}
 
         {visibleColumnTabs.length > 0 ? (
           <Card className="border-border/70 bg-card/50">
@@ -573,7 +326,7 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
                 <TabsList className="flex h-auto flex-wrap gap-1 bg-transparent p-0">
                   {visibleColumnTabs.map((row) => {
                     const isTruncated = row.column.length > 20;
-                    const displayName = isTruncated ? `${row.column.slice(0, 20)}…` : row.column;
+                    const displayName = isTruncated ? \`\${row.column.slice(0, 20)}…\` : row.column;
                     const trigger = (
                       <TabsTrigger
                         key={row.column}

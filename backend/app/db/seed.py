@@ -94,11 +94,11 @@ _BLOCK_DEFINITIONS = [
 
 _BASIC_DAG = {
     "nodes": [
-        {"id": "upload", "block_type": "upload", "position": {"x": 0, "y": 0}, "status": "idle"},
-        {"id": "eda", "block_type": "eda", "position": {"x": 0, "y": 200}, "status": "idle"},
-        {"id": "normalization", "block_type": "normalization", "position": {"x": 0, "y": 400}, "status": "idle"},
-        {"id": "algorithm", "block_type": "algorithm", "position": {"x": 0, "y": 600}, "status": "idle"},
-        {"id": "anomaly_viz", "block_type": "anomaly_viz", "position": {"x": 0, "y": 800}, "status": "idle"},
+        {"id": "upload", "block_type": "upload", "position": {"x": 0, "y": 0}, "status": "idle", "config": {"columns": []}},
+        {"id": "eda", "block_type": "eda", "position": {"x": 0, "y": 150}, "status": "idle"},
+        {"id": "normalization", "block_type": "normalization", "position": {"x": 0, "y": 300}, "status": "idle", "config": {"method": "min_max"}},
+        {"id": "algorithm", "block_type": "algorithm", "position": {"x": 0, "y": 450}, "status": "idle", "config": {"prompt_override": "Use Isolation Forest to detect anomalies."}},
+        {"id": "anomaly_viz", "block_type": "anomaly_viz", "position": {"x": 0, "y": 600}, "status": "idle"},
     ],
     "edges": [
         {"id": "e1", "source": "upload", "target": "eda"},
