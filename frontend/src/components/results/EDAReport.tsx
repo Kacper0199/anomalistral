@@ -1,19 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useMemo, useState } from "react";
 
-import { ErrorBoundary } from "@/components/error/ErrorBoundary";
-import { PanelError } from "@/components/error/PanelError";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -52,6 +40,11 @@ interface QualityFlag {
   label: string;
   value: string;
   tone: QualityTone;
+}
+
+interface BarDatum {
+  name: string;
+  value: number;
 }
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -236,21 +229,34 @@ const getStatsRows = (results: UnknownRecord, statsSource: UnknownRecord): Stats
   });
 };
 
-const CHART_MARGIN = { top: 10, right: 10, left: 0, bottom: 40 };
+function CSSBarChart({ data, metricType }: { data: BarDatum[]; metricType: "missing" | "mean" }) {
+  const maxValue = Math.max(...data.map((d) => Math.abs(d.value)), 1);
 
-const XAXIS_TICK_LINE = { stroke: "hsl(var(--border))" };
-const XAXIS_AXIS_LINE = { stroke: "hsl(var(--border))" };
-const YAXIS_TICK_LINE = { stroke: "hsl(var(--border))" };
-const YAXIS_AXIS_LINE = { stroke: "hsl(var(--border))" };
-
-const TOOLTIP_CURSOR = { fill: "rgba(59,130,246,0.12)" };
-const TOOLTIP_CONTENT_STYLE = {
-  backgroundColor: "hsl(var(--card))",
-  border: "1px solid hsl(var(--border))",
-  borderRadius: "8px",
-};
-
-const BAR_RADIUS: [number, number, number, number] = [4, 4, 0, 0];
+  return (
+    <div className="space-y-1.5">
+      {data.map((entry) => {
+        const pct = Math.min((Math.abs(entry.value) / maxValue) * 100, 100);
+        const color = metricType === "missing" && entry.value > 0 ? "bg-amber-500" : "bg-blue-500";
+        return (
+          <div key={entry.name} className="flex items-center gap-2 text-xs">
+            <span className="w-24 shrink-0 truncate text-muted-foreground" title={entry.name}>
+              {entry.name}
+            </span>
+            <div className="relative h-5 flex-1 rounded bg-muted/30">
+              <div
+                className={`absolute inset-y-0 left-0 rounded ${color} transition-all`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className="w-16 shrink-0 text-right tabular-nums text-muted-foreground">
+              {formatNumber(entry.value, 1)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function EDAReport({ results: rawResults }: EDAReportProps) {
   const [metricPreference, setMetricPreference] = useState<"missing" | "mean">("missing");
@@ -321,14 +327,6 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
           ? "mean"
           : "missing",
     [metricPreference, missingChartData.length, meanChartData.length],
-  );
-
-  const tooltipFormatter = useCallback(
-    (value: unknown) => {
-      const numeric = Array.isArray(value) ? toNumber(value[0]) : toNumber(value);
-      return [formatNumber(numeric, 2), activeMetric === "missing" ? "Missing" : "Mean"];
-    },
-    [activeMetric],
   );
 
   if (!results) {
@@ -419,7 +417,6 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
       ) : null}
 
       {chartData.length > 0 ? (
-        <ErrorBoundary fallback={<PanelError message="Distribution chart unavailable" />}>
         <Card className="border-border/70 bg-card/50">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
@@ -449,44 +446,9 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-64 w-full rounded-lg border border-border/60 bg-background/40 p-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={CHART_MARGIN}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis
-                    dataKey="name"
-                    stroke="hsl(var(--muted-foreground))"
-                    tickLine={XAXIS_TICK_LINE}
-                    axisLine={XAXIS_AXIS_LINE}
-                    angle={-28}
-                    textAnchor="end"
-                    interval={0}
-                    height={64}
-                  />
-                  <YAxis
-                    stroke="hsl(var(--muted-foreground))"
-                    tickLine={YAXIS_TICK_LINE}
-                    axisLine={YAXIS_AXIS_LINE}
-                  />
-                  <RechartsTooltip
-                    cursor={TOOLTIP_CURSOR}
-                    contentStyle={TOOLTIP_CONTENT_STYLE}
-                    formatter={tooltipFormatter}
-                  />
-                  <Bar dataKey="value" fill="#3b82f6" radius={BAR_RADIUS}>
-                    {chartData.map((entry) => (
-                      <Cell
-                        key={entry.name}
-                        fill={activeMetric === "missing" && entry.value > 0 ? "#f59e0b" : "#3b82f6"}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <CSSBarChart data={chartData} metricType={activeMetric} />
           </CardContent>
         </Card>
-        </ErrorBoundary>
       ) : null}
     </div>
   );

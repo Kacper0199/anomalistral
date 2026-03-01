@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Check, Copy, Download } from "lucide-react";
-import { codeToHtml } from "shiki";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -37,19 +36,18 @@ export function CodeViewer({ code }: CodeViewerProps) {
 
     const highlight = async () => {
       try {
+        const { codeToHtml } = await import("shiki");
         const html = await codeToHtml(cleanCode, {
           lang: "python",
           theme: "github-dark",
         });
-
         if (isMounted) {
           setHighlightedHtml(html);
         }
-      } catch (error) {
+      } catch {
         if (isMounted) {
           setHighlightedHtml("");
         }
-        toast.error(error instanceof Error ? error.message : "Code highlighting failed.");
       }
     };
 

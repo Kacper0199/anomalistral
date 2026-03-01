@@ -6,41 +6,37 @@ from app.models.schemas import SSEEvent
 
 class StreamManager:
     def __init__(self) -> None:
-        self._queues: dict[str, asyncio.Queue[SSEEvent]] = {}
-        self._subscribers: dict[str, int] = {}
+        self._subscribers: dict[str, list[asyncio.Queue[SSEEvent]]] = {}
         self._lock = asyncio.Lock()
 
     async def subscribe(self, session_id: str) -> AsyncGenerator[SSEEvent, None]:
+        queue: asyncio.Queue[SSEEvent] = asyncio.Queue()
         async with self._lock:
-            if session_id not in self._queues:
-                self._queues[session_id] = asyncio.Queue()
-                self._subscribers[session_id] = 0
-            self._subscribers[session_id] += 1
-            queue = self._queues[session_id]
-
+            self._subscribers.setdefault(session_id, []).append(queue)
         try:
             while True:
                 event = await queue.get()
                 yield event
         finally:
-            await self.unsubscribe(session_id)
+            async with self._lock:
+                subs = self._subscribers.get(session_id)
+                if subs and queue in subs:
+                    subs.remove(queue)
+                if subs is not None and len(subs) == 0:
+                    self._subscribers.pop(session_id, None)
 
     async def publish(self, session_id: str, event: SSEEvent) -> None:
         async with self._lock:
-            if session_id not in self._queues:
-                self._queues[session_id] = asyncio.Queue()
-                self._subscribers[session_id] = 0
-            queue = self._queues[session_id]
-        await queue.put(event)
+            queues = self._subscribers.get(session_id, [])
+            snapshot = list(queues)
+        for q in snapshot:
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
 
     async def unsubscribe(self, session_id: str) -> None:
-        async with self._lock:
-            if session_id not in self._subscribers:
-                return
-            self._subscribers[session_id] -= 1
-            if self._subscribers[session_id] <= 0:
-                self._subscribers.pop(session_id, None)
-                self._queues.pop(session_id, None)
+        pass
 
 
 stream_manager = StreamManager()

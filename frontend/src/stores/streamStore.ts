@@ -18,10 +18,15 @@ export const useStreamStore = create<StreamStore>((set) => ({
   isConnected: false,
   lastSeq: 0,
   addEvent: (event) =>
-    set((state) => ({
-      events: [...state.events, event].slice(-500),
-      lastSeq: event.seq,
-    })),
+    set((state) => {
+      if (event.seq <= state.lastSeq) {
+        return state;
+      }
+      return {
+        events: [...state.events, event].slice(-500),
+        lastSeq: event.seq,
+      };
+    }),
   setConnected: (connected) => set({ isConnected: connected }),
   clear: () => set({ events: [], isConnected: false, lastSeq: 0 }),
 }));
