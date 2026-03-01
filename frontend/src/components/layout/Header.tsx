@@ -7,10 +7,10 @@ interface HeaderProps {
 
 const statusLabel: Record<SessionStatus, string> = {
   created: "Created",
+  idle: "Idle",
   eda_running: "EDA Running",
   algorithm_running: "Algorithm Running",
   codegen_running: "Codegen Running",
-  validation_running: "Validation Running",
   completed: "Completed",
   failed: "Failed",
 };

@@ -6,9 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.db.session import init_db
+from app.db.seed import seed_database
+from app.db.session import AsyncSessionLocal, init_db
 from app.models.schemas import HealthResponse
-from app.routers import pipelines, sessions, stream, uploads
+from app.routers import dag, pipelines, sessions, stream, templates, uploads
 
 
 @asynccontextmanager
@@ -17,6 +18,8 @@ async def lifespan(_: FastAPI):
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     Path(settings.ARTIFACT_DIR).mkdir(parents=True, exist_ok=True)
     await init_db()
+    async with AsyncSessionLocal() as db:
+        await seed_database(db)
     yield
 
 
@@ -35,6 +38,8 @@ app.include_router(sessions.router, prefix="/api")
 app.include_router(pipelines.router, prefix="/api")
 app.include_router(stream.router, prefix="/api")
 app.include_router(uploads.router, prefix="/api")
+app.include_router(dag.router, prefix="/api")
+app.include_router(templates.router, prefix="/api")
 
 
 @app.get("/api/health", response_model=HealthResponse)

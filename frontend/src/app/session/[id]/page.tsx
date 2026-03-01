@@ -1,41 +1,36 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useParams } from "next/navigation";
+import { ReactFlowProvider } from "@xyflow/react";
 
+import { BlockChat } from "@/components/chat/BlockChat";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ErrorBoundary } from "@/components/error/ErrorBoundary";
 import { PanelError } from "@/components/error/PanelError";
 import { Header } from "@/components/layout/Header";
 import { SessionSkeleton } from "@/components/loading/SessionSkeleton";
 import { PipelineEditor } from "@/components/pipeline/PipelineEditor";
+import { TemplateSelector } from "@/components/pipeline/TemplateSelector";
 import { AnomalyChart } from "@/components/results/AnomalyChart";
 import { CodeViewer } from "@/components/results/CodeViewer";
 import { EDAReport } from "@/components/results/EDAReport";
-import { ValidationReport } from "@/components/results/ValidationReport";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/hooks/useSession";
 import { useSSE } from "@/hooks/useSSE";
-import { API_URL } from "@/lib/api";
+import { getDAG, saveDAG } from "@/lib/api";
 import { usePipelineStore } from "@/stores/pipelineStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useStreamStore } from "@/stores/streamStore";
-import type { Session, SessionStatus } from "@/types";
+import type { Session, DAGDefinition, BlockType } from "@/types";
 
-const nodeOrder = ["upload", "eda", "algorithm", "codegen", "validation"] as const;
-type PipelineNodeId = (typeof nodeOrder)[number];
-
-const statusProgressMap: Record<
-  Exclude<SessionStatus, "completed" | "failed">,
-  { completed: PipelineNodeId[]; running?: PipelineNodeId }
-> = {
-  created: { completed: [] },
-  eda_running: { completed: ["upload"], running: "eda" },
-  algorithm_running: { completed: ["upload", "eda"], running: "algorithm" },
-  codegen_running: { completed: ["upload", "eda", "algorithm"], running: "codegen" },
-  validation_running: { completed: ["upload", "eda", "algorithm", "codegen"], running: "validation" },
-};
+interface CodeEntry {
+  blockId: string;
+  blockType: string;
+  label: string;
+  code: string;
+}
 
 function getPayloadString(payload: Record<string, unknown>, key: string): string | undefined {
   const value = payload[key];
@@ -53,61 +48,30 @@ function getPayloadRecord(
   return undefined;
 }
 
-function inferFailedNode(session: Session): PipelineNodeId {
-  if (!session.eda_results) {
-    return "eda";
-  }
-  if (!session.algorithm_recommendations) {
-    return "algorithm";
-  }
-  if (!session.generated_code) {
-    return "codegen";
-  }
-  return "validation";
-}
-
-function inferCompletedNodesBeforeFailure(session: Session): PipelineNodeId[] {
-  const completed: PipelineNodeId[] = ["upload"];
-  if (session.eda_results) {
-    completed.push("eda");
-  }
-  if (session.algorithm_recommendations) {
-    completed.push("algorithm");
-  }
-  if (session.generated_code) {
-    completed.push("codegen");
-  }
-  return completed;
-}
-
-export default function SessionPage() {
+function SessionInner({ sessionId }: { sessionId: string }) {
+  const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [blockResults, setBlockResults] = useState<Record<string, Record<string, unknown>>>({});
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const processedSeqRef = useRef(0);
-  const params = useParams<{ id: string }>();
-  const sessionId = params.id;
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { currentSession, loadSession } = useSession();
-  const setSession = useSessionStore((state) => state.setSession);
-  const addMessage = useSessionStore((state) => state.addMessage);
+  const setSession = useSessionStore((s) => s.setSession);
+  const addMessage = useSessionStore((s) => s.addMessage);
+  const addBlockMessage = useSessionStore((s) => s.addBlockMessage);
 
-  const events = useStreamStore((state) => state.events);
-  const clearStream = useStreamStore((state) => state.clear);
+  const events = useStreamStore((s) => s.events);
+  const clearStream = useStreamStore((s) => s.clear);
 
-  const resetPipeline = usePipelineStore((state) => state.resetPipeline);
-  const setNodeData = usePipelineStore((state) => state.setNodeData);
-  const setNodeStatus = usePipelineStore((state) => state.setNodeStatus);
+  const nodes = usePipelineStore((s) => s.nodes);
+  const isModified = usePipelineStore((s) => s.isModified);
+  const resetPipeline = usePipelineStore((s) => s.resetPipeline);
+  const setNodeStatus = usePipelineStore((s) => s.setNodeStatus);
+  const loadFromDAG = usePipelineStore((s) => s.loadFromDAG);
+  const toDAGDefinition = usePipelineStore((s) => s.toDAGDefinition);
+  const setModified = usePipelineStore((s) => s.setModified);
 
-  const { connect, disconnect, isConnected } = useSSE(sessionId ?? null);
-
-  useEffect(() => {
-    processedSeqRef.current = 0;
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
-    void loadSession(sessionId);
-  }, [loadSession, sessionId]);
+  const { connect, disconnect, isConnected } = useSSE(sessionId);
 
   const sseRef = useRef({ connect, disconnect, clearStream });
   useEffect(() => {
@@ -115,9 +79,14 @@ export default function SessionPage() {
   });
 
   useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
+    processedSeqRef.current = 0;
+  }, [sessionId]);
+
+  useEffect(() => {
+    void loadSession(sessionId);
+  }, [loadSession, sessionId]);
+
+  useEffect(() => {
     sseRef.current.connect();
     return () => {
       sseRef.current.disconnect();
@@ -129,81 +98,156 @@ export default function SessionPage() {
     resetPipeline();
   }, [sessionId, resetPipeline]);
 
-  const sessionStatus = currentSession?.status;
   useEffect(() => {
-    if (!sessionStatus) {
+    if (!currentSession) return;
+    const hasDag = currentSession.dag_config !== null || currentSession.template_id !== null;
+    if (!hasDag) {
+      void Promise.resolve().then(() => setShowTemplateSelector(true));
       return;
     }
-    if (sessionStatus === "completed") {
-      nodeOrder.forEach((nodeId) => setNodeStatus(nodeId, "success"));
-      return;
-    }
-    if (sessionStatus === "failed") {
-      const session = useSessionStore.getState().currentSession;
-      if (!session) {
-        return;
-      }
-      inferCompletedNodesBeforeFailure(session).forEach((nodeId) => setNodeStatus(nodeId, "success"));
-      setNodeStatus(inferFailedNode(session), "error");
-      return;
-    }
-    const progress = statusProgressMap[sessionStatus];
-    if (!progress) {
-      return;
-    }
-    progress.completed.forEach((nodeId) => setNodeStatus(nodeId, "success"));
-    if (progress.running) {
-      setNodeStatus(progress.running, "running");
-    }
-  }, [sessionStatus, setNodeStatus]);
+    getDAG(sessionId)
+      .then((dag) => {
+        loadFromDAG(dag, sessionId);
+        setShowTemplateSelector(false);
+      })
+      .catch(() => {
+        setShowTemplateSelector(true);
+      });
+  }, [currentSession, sessionId, loadFromDAG]);
 
-  const isStuckRef = useRef(false);
-  const [isStuck, setIsStuck] = useState(false);
-  useEffect(() => {
-    const stuckStatuses = new Set(["eda_running", "algorithm_running", "codegen_running", "validation_running"]);
-    const shouldCheck = currentSession && stuckStatuses.has(currentSession.status);
-    if (!shouldCheck) {
-      isStuckRef.current = false;
-      const interval = setInterval(() => {
-        setIsStuck(false);
-      }, 30_000);
-      return () => clearInterval(interval);
-    }
-    const created = new Date(currentSession.created_at).getTime();
-    const interval = setInterval(() => {
-      setIsStuck(Date.now() - created > 5 * 60 * 1000);
-    }, 1_000);
-    return () => clearInterval(interval);
-  }, [currentSession]);
+  const handleTemplateApply = useCallback(
+    (dag: DAGDefinition) => {
+      loadFromDAG(dag, sessionId);
+      setShowTemplateSelector(false);
+    },
+    [loadFromDAG, sessionId]
+  );
+
+  const handleBlockClose = useCallback(() => {
+    setActiveBlockId(null);
+  }, []);
 
   useEffect(() => {
-    if (events.length === 0) {
-      return;
-    }
+    if (!isModified) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const dag = toDAGDefinition();
+      saveDAG(sessionId, dag)
+        .then(() => setModified(false))
+        .catch(() => {});
+    }, 1000);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [isModified, sessionId, toDAGDefinition, setModified]);
 
-    const pendingEvents = events.filter((event) => event.seq > processedSeqRef.current);
-    if (pendingEvents.length === 0) {
-      return;
-    }
+  useEffect(() => {
+    if (events.length === 0) return;
 
-    const updateSession = (updater: (session: Session) => Session) => {
-      const session = useSessionStore.getState().currentSession;
-      if (!session) {
-        return;
-      }
-      setSession(updater(session));
+    const pendingEvents = events.filter((e) => e.seq > processedSeqRef.current);
+    if (pendingEvents.length === 0) return;
+
+    const updateSession = (updater: (s: Session) => Session) => {
+      const s = useSessionStore.getState().currentSession;
+      if (!s) return;
+      setSession(updater(s));
     };
 
     for (const event of pendingEvents) {
       processedSeqRef.current = event.seq;
 
       if (event.type === "pipeline.started") {
-        setNodeStatus("upload", "success");
-        updateSession((session) => ({ ...session, status: "eda_running" }));
+        updateSession((s) => ({ ...s, status: "eda_running" }));
+        addMessage({ id: `${event.seq}`, role: "system", content: "Pipeline started.", timestamp: event.ts });
+        continue;
+      }
+
+      if (event.type === "pipeline.completed") {
+        updateSession((s) => ({ ...s, status: "completed" }));
+        addMessage({ id: `${event.seq}`, role: "system", content: "Pipeline completed successfully.", timestamp: event.ts });
+        continue;
+      }
+
+      if (event.type === "pipeline.failed") {
+        const errorMsg = getPayloadString(event.payload, "error") ?? "Unknown error";
+        updateSession((s) => ({ ...s, status: "failed" }));
+        addMessage({ id: `${event.seq}`, role: "system", content: `Pipeline failed: ${errorMsg}`, timestamp: event.ts });
+        continue;
+      }
+
+      if (event.type === "block.started") {
+        const blockId = getPayloadString(event.payload, "block_id");
+        const blockType = getPayloadString(event.payload, "block_type");
+        if (blockId) {
+          setNodeStatus(blockId, "running");
+          addMessage({
+            id: `${event.seq}`,
+            role: "system",
+            content: `Block ${blockType ?? blockId} started.`,
+            timestamp: event.ts,
+          });
+        }
+        continue;
+      }
+
+      if (event.type === "block.completed") {
+        const blockId = getPayloadString(event.payload, "block_id");
+        const blockType = getPayloadString(event.payload, "block_type");
+        const result = getPayloadRecord(event.payload, "result");
+        if (blockId) {
+          setNodeStatus(blockId, "success");
+          if (result) {
+            setBlockResults((prev) => ({ ...prev, [blockId]: result }));
+            if (blockType === "eda") {
+              updateSession((s) => ({ ...s, eda_results: result }));
+            }
+          }
+          addMessage({
+            id: `${event.seq}`,
+            role: "system",
+            content: `Block ${blockType ?? blockId} completed.`,
+            timestamp: event.ts,
+          });
+        }
+        continue;
+      }
+
+      if (event.type === "block.failed") {
+        const blockId = getPayloadString(event.payload, "block_id");
+        const blockType = getPayloadString(event.payload, "block_type");
+        const errorMsg = getPayloadString(event.payload, "error") ?? "Unknown error";
+        if (blockId) {
+          setNodeStatus(blockId, "error");
+          addMessage({
+            id: `${event.seq}`,
+            role: "system",
+            content: `Block ${blockType ?? blockId} failed: ${errorMsg}`,
+            timestamp: event.ts,
+          });
+        }
+        continue;
+      }
+
+      if (event.type === "block.agent.message") {
+        const blockId = getPayloadString(event.payload, "block_id");
+        const text = getPayloadString(event.payload, "text");
+        const agent = getPayloadString(event.payload, "agent");
+        if (blockId && text) {
+          const msg = { id: `${event.seq}`, role: "assistant" as const, content: text, agent, timestamp: event.ts };
+          addBlockMessage(blockId, msg);
+          addMessage(msg);
+        }
+        continue;
+      }
+
+      if (event.type === "dag.validated") {
+        const valid = event.payload["valid"];
+        const errors = event.payload["errors"];
+        const errList = Array.isArray(errors) ? (errors as string[]).join(", ") : "";
         addMessage({
           id: `${event.seq}`,
           role: "system",
-          content: "Pipeline started.",
+          content: valid ? "DAG validation passed." : `DAG validation failed: ${errList}`,
           timestamp: event.ts,
         });
         continue;
@@ -211,197 +255,130 @@ export default function SessionPage() {
 
       if (event.type === "eda.started") {
         setNodeStatus("eda", "running");
-        setNodeData("eda", { startedAt: event.ts });
-        updateSession((session) => ({ ...session, status: "eda_running" }));
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: "EDA analysis started...",
-          timestamp: event.ts,
-        });
+        updateSession((s) => ({ ...s, status: "eda_running" }));
+        addMessage({ id: `${event.seq}`, role: "system", content: "EDA analysis started...", timestamp: event.ts });
         continue;
       }
 
       if (event.type === "eda.completed") {
         setNodeStatus("eda", "success");
-        setNodeData("eda", { completedAt: event.ts, previewData: "EDA analysis complete" });
         const results = getPayloadRecord(event.payload, "results");
         if (results) {
-          updateSession((session) => ({ ...session, eda_results: results }));
+          updateSession((s) => ({ ...s, eda_results: results }));
+          setBlockResults((prev) => ({ ...prev, eda: results }));
         }
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: "EDA analysis completed.",
-          timestamp: event.ts,
-        });
+        addMessage({ id: `${event.seq}`, role: "system", content: "EDA analysis completed.", timestamp: event.ts });
+        continue;
+      }
+
+      if (event.type === "eda.failed") {
+        setNodeStatus("eda", "error");
+        const errorMsg = getPayloadString(event.payload, "error") ?? "Unknown error";
+        addMessage({ id: `${event.seq}`, role: "system", content: `EDA failed: ${errorMsg}`, timestamp: event.ts });
         continue;
       }
 
       if (event.type === "algorithm.started") {
         setNodeStatus("algorithm", "running");
-        setNodeData("algorithm", { startedAt: event.ts });
-        updateSession((session) => ({ ...session, status: "algorithm_running" }));
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: "Algorithm selection started...",
-          timestamp: event.ts,
-        });
+        updateSession((s) => ({ ...s, status: "algorithm_running" }));
+        addMessage({ id: `${event.seq}`, role: "system", content: "Algorithm selection started...", timestamp: event.ts });
         continue;
       }
 
       if (event.type === "algorithm.completed") {
         setNodeStatus("algorithm", "success");
-        setNodeData("algorithm", { completedAt: event.ts, previewData: "Algorithm selected" });
         const recommendations = getPayloadRecord(event.payload, "recommendations");
         if (recommendations) {
-          updateSession((session) => ({ ...session, algorithm_recommendations: recommendations }));
+          updateSession((s) => ({ ...s, algorithm_recommendations: recommendations }));
         }
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: "Algorithm selection completed.",
-          timestamp: event.ts,
-        });
+        addMessage({ id: `${event.seq}`, role: "system", content: "Algorithm selection completed.", timestamp: event.ts });
+        continue;
+      }
+
+      if (event.type === "algorithm.failed") {
+        setNodeStatus("algorithm", "error");
+        const errorMsg = getPayloadString(event.payload, "error") ?? "Unknown error";
+        addMessage({ id: `${event.seq}`, role: "system", content: `Algorithm selection failed: ${errorMsg}`, timestamp: event.ts });
         continue;
       }
 
       if (event.type === "codegen.started") {
         setNodeStatus("codegen", "running");
-        setNodeData("codegen", { startedAt: event.ts });
-        updateSession((session) => ({ ...session, status: "codegen_running" }));
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: "Code generation started...",
-          timestamp: event.ts,
-        });
+        updateSession((s) => ({ ...s, status: "codegen_running" }));
+        addMessage({ id: `${event.seq}`, role: "system", content: "Code generation started...", timestamp: event.ts });
         continue;
       }
 
       if (event.type === "codegen.completed") {
         setNodeStatus("codegen", "success");
-        setNodeData("codegen", { completedAt: event.ts, previewData: "Code generated" });
-        const generatedCodeValue = getPayloadString(event.payload, "code");
-        updateSession((session) => ({
-          ...session,
-          status: "validation_running",
-          ...(generatedCodeValue ? { generated_code: generatedCodeValue } : {}),
-        }));
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: "Code generation completed.",
-          timestamp: event.ts,
-        });
-        continue;
-      }
-
-      if (event.type === "validation.started") {
-        setNodeStatus("validation", "running");
-        setNodeData("validation", { startedAt: event.ts });
-        updateSession((session) => ({ ...session, status: "validation_running" }));
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: "Validation started...",
-          timestamp: event.ts,
-        });
-        continue;
-      }
-
-      if (event.type === "validation.completed") {
-        setNodeStatus("validation", "success");
-        setNodeData("validation", { completedAt: event.ts, previewData: "Validation complete" });
-        const validation = getPayloadRecord(event.payload, "validation");
-        if (validation) {
-          updateSession((session) => ({ ...session, validation_results: validation }));
+        const generatedCode = getPayloadString(event.payload, "code");
+        if (generatedCode) {
+          updateSession((s) => ({ ...s, generated_code: generatedCode }));
+          setBlockResults((prev) => ({ ...prev, codegen: { code: generatedCode } }));
         }
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: "Validation completed.",
-          timestamp: event.ts,
-        });
+        addMessage({ id: `${event.seq}`, role: "system", content: "Code generation completed.", timestamp: event.ts });
         continue;
       }
 
-      if (event.type === "pipeline.completed") {
-        updateSession((session) => ({ ...session, status: "completed" }));
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: "Pipeline completed successfully.",
-          timestamp: event.ts,
-        });
-        continue;
-      }
-
-      if (event.type === "pipeline.failed") {
-        const runningNode = nodeOrder.find((nodeId) => {
-          const node = usePipelineStore.getState().nodes.find((candidate) => candidate.id === nodeId);
-          return node?.data.status === "running";
-        });
-        setNodeStatus(runningNode ?? "validation", "error");
-        updateSession((session) => ({ ...session, status: "failed" }));
-        const errorMessage = getPayloadString(event.payload, "error") ?? "Unknown error";
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: `Pipeline failed: ${errorMessage}`,
-          timestamp: event.ts,
-        });
-        continue;
-      }
-
-      const phaseFailedMatch = event.type.match(/^(eda|algorithm|codegen|validation)\.failed$/);
-      if (phaseFailedMatch) {
-        const failedPhase = phaseFailedMatch[1] as PipelineNodeId;
-        setNodeStatus(failedPhase, "error");
-        const errorMessage = getPayloadString(event.payload, "error") ?? "Unknown error";
-        addMessage({
-          id: `${event.seq}`,
-          role: "system",
-          content: `${failedPhase.charAt(0).toUpperCase() + failedPhase.slice(1)} failed: ${errorMessage}`,
-          timestamp: event.ts,
-        });
+      if (event.type === "codegen.failed") {
+        setNodeStatus("codegen", "error");
+        const errorMsg = getPayloadString(event.payload, "error") ?? "Unknown error";
+        addMessage({ id: `${event.seq}`, role: "system", content: `Code generation failed: ${errorMsg}`, timestamp: event.ts });
         continue;
       }
 
       if (event.type === "chat.response") {
         const text = getPayloadString(event.payload, "text");
-        if (!text) {
-          continue;
-        }
+        if (!text) continue;
         const agent = getPayloadString(event.payload, "agent");
-        addMessage({
-          id: `${event.seq}`,
-          role: "assistant",
-          content: text,
-          agent,
-          timestamp: event.ts,
-        });
+        addMessage({ id: `${event.seq}`, role: "assistant", content: text, agent, timestamp: event.ts });
       }
     }
-  }, [addMessage, events, sessionId, setNodeData, setNodeStatus, setSession]);
+  }, [addBlockMessage, addMessage, events, setNodeStatus, setSession]);
 
-  const edaResults = useMemo(
-    () => currentSession?.eda_results ?? null,
-    [currentSession?.eda_results],
-  );
-  const generatedCode = useMemo(
-    () => currentSession?.generated_code ?? null,
-    [currentSession?.generated_code],
-  );
-  const validationResults = useMemo(
-    () => currentSession?.validation_results ?? null,
-    [currentSession?.validation_results],
-  );
+  const edaResults = useMemo<Record<string, unknown> | null>(() => {
+    const edaBlock = nodes.find((n) => n.data.type === "eda");
+    if (edaBlock && blockResults[edaBlock.id]) return blockResults[edaBlock.id];
+    if (blockResults["eda"]) return blockResults["eda"];
+    return currentSession?.eda_results ?? null;
+  }, [nodes, blockResults, currentSession]);
 
-  if (!sessionId) {
+  const codeEntries = useMemo<CodeEntry[]>(() => {
+    const entries: CodeEntry[] = [];
+    for (const node of nodes) {
+      const result = blockResults[node.id];
+      if (!result) continue;
+      const code = typeof result["code"] === "string"
+        ? result["code"]
+        : typeof result["generated_code"] === "string"
+        ? result["generated_code"]
+        : null;
+      if (code) {
+        entries.push({ blockId: node.id, blockType: node.data.type, label: node.data.label, code });
+      }
+    }
+    if (entries.length === 0 && currentSession?.generated_code) {
+      entries.push({
+        blockId: "codegen",
+        blockType: "codegen",
+        label: "Generated Code",
+        code: currentSession.generated_code,
+      });
+    }
+    return entries;
+  }, [nodes, blockResults, currentSession]);
+
+  const anomalyResults = useMemo<Record<string, unknown> | null>(() => {
+    const vizBlock = nodes.find((n) => n.data.type === "anomaly_viz");
+    if (vizBlock && blockResults[vizBlock.id]) return blockResults[vizBlock.id];
     return null;
-  }
+  }, [nodes, blockResults]);
+
+  const activeBlockType = useMemo<BlockType | null>(() => {
+    if (!activeBlockId) return null;
+    const node = nodes.find((n) => n.id === activeBlockId);
+    return node?.data.type ?? null;
+  }, [activeBlockId, nodes]);
 
   if (!currentSession) {
     return <SessionSkeleton />;
@@ -411,9 +388,19 @@ export default function SessionPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <Header status={currentSession.status} />
       <main className="mx-auto grid h-[calc(100vh-4rem)] w-full max-w-[1800px] grid-cols-1 gap-4 p-4 md:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)_420px]">
+
         <section className="min-h-[340px] md:h-full">
           <ErrorBoundary key={sessionId} fallback={<PanelError message="Chat panel crashed" />}>
-            <ChatPanel sessionId={sessionId} />
+            {activeBlockId && activeBlockType ? (
+              <BlockChat
+                sessionId={sessionId}
+                blockId={activeBlockId}
+                blockType={activeBlockType}
+                onClose={handleBlockClose}
+              />
+            ) : (
+              <ChatPanel sessionId={sessionId} />
+            )}
           </ErrorBoundary>
         </section>
 
@@ -423,57 +410,68 @@ export default function SessionPage() {
             <span className="text-xs text-muted-foreground">
               Stream: {isConnected ? "connected" : "reconnecting"}
             </span>
-            {isStuck && (
-              <button
-                className="rounded bg-amber-600/80 px-2 py-0.5 text-xs text-white hover:bg-amber-600"
-                onClick={async () => {
-                  await fetch(`${API_URL}/sessions/${sessionId}/recover`, { method: "POST" });
-                  void loadSession(sessionId);
-                }}
-              >
-                Recover stuck session
-              </button>
-            )}
           </div>
           <ErrorBoundary fallback={<PanelError message="Pipeline view unavailable" />}>
-            <PipelineEditor />
+            {showTemplateSelector ? (
+              <TemplateSelector sessionId={sessionId} onApply={handleTemplateApply} />
+            ) : (
+              <PipelineEditor />
+            )}
           </ErrorBoundary>
         </section>
 
         <section className="flex h-full min-h-[340px] flex-col rounded-xl border border-border/80 bg-card/30 p-3 xl:overflow-hidden">
           <Tabs defaultValue="eda" className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="grid w-full shrink-0 grid-cols-4">
+            <TabsList className="grid w-full shrink-0 grid-cols-3">
               <TabsTrigger value="eda">EDA</TabsTrigger>
               <TabsTrigger value="code">Code</TabsTrigger>
-              <TabsTrigger value="validation">Validation</TabsTrigger>
               <TabsTrigger value="anomaly">Anomaly</TabsTrigger>
             </TabsList>
             <TabsContent value="eda" className="mt-3 min-h-0 flex-1 overflow-y-auto">
-              <ErrorBoundary key={edaResults ? "eda-loaded" : "eda-pending"} fallback={<PanelError message="EDA report failed to render" />}>
+              <ErrorBoundary
+                key={edaResults ? "eda-loaded" : "eda-pending"}
+                fallback={<PanelError message="EDA report failed to render" />}
+              >
                 <EDAReport results={edaResults} />
               </ErrorBoundary>
             </TabsContent>
             <TabsContent value="code" className="mt-3 min-h-0 flex-1 overflow-y-auto">
-              <ErrorBoundary key={generatedCode ? "code-loaded" : "code-pending"} fallback={<PanelError message="Code viewer failed to render" />}>
-                <CodeViewer code={generatedCode} />
-              </ErrorBoundary>
-            </TabsContent>
-            <TabsContent value="validation" className="mt-3 min-h-0 flex-1 overflow-y-auto">
-              <ErrorBoundary key={validationResults ? "val-loaded" : "val-pending"} fallback={<PanelError message="Validation report failed to render" />}>
-                <ValidationReport results={validationResults} sessionStatus={currentSession.status} />
+              <ErrorBoundary
+                key={codeEntries.length > 0 ? "code-loaded" : "code-pending"}
+                fallback={<PanelError message="Code viewer failed to render" />}
+              >
+                {codeEntries.length > 0 ? (
+                  <CodeViewer entries={codeEntries} />
+                ) : (
+                  <CodeViewer code={currentSession.generated_code} />
+                )}
               </ErrorBoundary>
             </TabsContent>
             <TabsContent value="anomaly" className="mt-3 min-h-0 flex-1 overflow-y-auto">
-              <ErrorBoundary key={edaResults && validationResults ? "anomaly-loaded" : "anomaly-pending"} fallback={<PanelError message="Anomaly chart failed to render" />}>
-                <AnomalyChart
-                  edaResults={edaResults}
-                  validationResults={validationResults}
-                />
+              <ErrorBoundary
+                key={edaResults ? "anomaly-loaded" : "anomaly-pending"}
+                fallback={<PanelError message="Anomaly chart failed to render" />}
+              >
+                <AnomalyChart edaResults={edaResults} validationResults={anomalyResults} />
               </ErrorBoundary>
             </TabsContent>
           </Tabs>
         </section>
+
       </main>
     </div>
+  );
+}
+
+export default function SessionPage() {
+  const params = useParams<{ id: string }>();
+  const sessionId = params.id;
+
+  if (!sessionId) return null;
+
+  return (
+    <ReactFlowProvider>
+      <SessionInner sessionId={sessionId} />
+    </ReactFlowProvider>
   );
 }
