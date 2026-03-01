@@ -9,6 +9,7 @@ repro_*.py
 
 build_plans/
 instructions/
+FIX_PLAN*.md
 
 *.db
 *.sqlite
