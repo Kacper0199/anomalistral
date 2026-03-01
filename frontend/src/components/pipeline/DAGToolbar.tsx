@@ -11,7 +11,6 @@ import {
   Play,
   RefreshCw,
   Save,
-  Search,
   Square,
   Upload,
 } from "lucide-react";
@@ -20,7 +19,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { controlPipeline, saveDAG, validateDAG } from "@/lib/api";
+import { controlPipeline, saveDAG } from "@/lib/api";
 import { usePipelineStore } from "@/stores/pipelineStore";
 import type { BlockType } from "@/types";
 
@@ -30,7 +29,6 @@ interface DAGToolbarProps {
 
 const blockPalette: { type: BlockType; label: string; Icon: React.ElementType }[] = [
   { type: "upload", label: "Upload", Icon: Upload },
-  { type: "eda", label: "EDA", Icon: Search },
   { type: "normalization", label: "Normalize", Icon: Layers },
   { type: "imputation", label: "Impute", Icon: PenTool },
   { type: "algorithm", label: "Algorithm", Icon: Bot },
@@ -44,7 +42,6 @@ export function DAGToolbar({ sessionId }: DAGToolbarProps) {
   const toDAGDefinition = usePipelineStore((s) => s.toDAGDefinition);
   const setModified = usePipelineStore((s) => s.setModified);
   const [saving, setSaving] = useState(false);
-  const [validating, setValidating] = useState(false);
 
   const isIdle = pipelineStatus === "idle";
   const isRunning = pipelineStatus === "running";
@@ -81,22 +78,6 @@ export function DAGToolbar({ sessionId }: DAGToolbarProps) {
     }
   }
 
-  async function handleValidate() {
-    if (!sessionId) return;
-    setValidating(true);
-    try {
-      const result = await validateDAG(sessionId);
-      if (result.valid) {
-        toast.success("DAG is valid");
-      } else {
-        toast.error(`Validation failed: ${result.errors.join(", ")}`);
-      }
-    } catch (err) {
-      toast.error(`Validation error: ${(err as Error).message}`);
-    } finally {
-      setValidating(false);
-    }
-  }
 
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 backdrop-blur">
@@ -201,21 +182,7 @@ export function DAGToolbar({ sessionId }: DAGToolbarProps) {
           <TooltipContent side="bottom">Save DAG to backend</TooltipContent>
         </Tooltip>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1.5 text-xs"
-              disabled={validating || !sessionId}
-              onClick={handleValidate}
-            >
-              <Search className="size-3.5" />
-              {validating ? "Checking…" : "Validate"}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Validate DAG structure</TooltipContent>
-        </Tooltip>
+
       </div>
     </div>
   );

@@ -132,10 +132,12 @@ export function PipelineNode({ id, data }: NodeProps<PipelineFlowNode>) {
 
   function handleSettings(e: React.MouseEvent) {
     e.stopPropagation();
+    usePipelineStore.getState().setActiveSettingsBlockId(id);
   }
 
   function handleChat(e: React.MouseEvent) {
     e.stopPropagation();
+    usePipelineStore.getState().setActiveChatBlockId(id);
   }
 
   return (
@@ -154,24 +156,31 @@ export function PipelineNode({ id, data }: NodeProps<PipelineFlowNode>) {
 
           {hovered && (
             <div className="absolute -top-3 right-2 flex items-center gap-1">
-              <button
-                type="button"
-                onClick={handleChat}
-                className="flex h-6 w-6 items-center justify-center rounded-full bg-card border border-border/60 text-muted-foreground hover:text-foreground shadow-sm transition-colors"
-              >
-                <MessageSquare className="size-3" />
-              </button>
-              <button
-                type="button"
-                onClick={handleSettings}
-                className="flex h-6 w-6 items-center justify-center rounded-full bg-card border border-border/60 text-muted-foreground hover:text-foreground shadow-sm transition-colors"
-              >
-                <Settings className="size-3" />
-              </button>
+              {data.type === "algorithm" && (
+                <button
+                  type="button"
+                  onClick={handleChat}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-card border border-border/60 text-muted-foreground hover:text-foreground shadow-sm transition-colors"
+                  title="Chat with Algorithm Agent"
+                >
+                  <MessageSquare className="size-3" />
+                </button>
+              )}
+              {["upload", "normalization", "imputation", "algorithm", "aggregator"].includes(data.type) && (
+                <button
+                  type="button"
+                  onClick={handleSettings}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-card border border-border/60 text-muted-foreground hover:text-foreground shadow-sm transition-colors"
+                  title="Settings"
+                >
+                  <Settings className="size-3" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleDelete}
                 className="flex h-6 w-6 items-center justify-center rounded-full bg-card border border-red-500/40 text-red-400 hover:text-red-300 hover:border-red-400 shadow-sm transition-colors"
+                title="Delete Block"
               >
                 <X className="size-3" />
               </button>

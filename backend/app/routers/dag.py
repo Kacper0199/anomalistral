@@ -371,9 +371,15 @@ async def apply_template(
     await db.execute(delete(SessionBlock).where(SessionBlock.session_id == session_id))
     await db.flush()
 
+    import uuid
+    id_map = {}
     for node_data in dag_def.get("nodes", []):
+        old_id = node_data["id"]
+        new_id = str(uuid.uuid4())
+        id_map[old_id] = new_id
+        
         block = SessionBlock(
-            id=node_data["id"],
+            id=new_id,
             session_id=session_id,
             block_type_id=node_data["block_type"],
             position_x=float(node_data.get("position", {}).get("x", 0)),
@@ -387,10 +393,10 @@ async def apply_template(
 
     for edge_data in dag_def.get("edges", []):
         edge = SessionEdge(
-            id=edge_data["id"],
+            id=str(uuid.uuid4()),
             session_id=session_id,
-            source_block_id=edge_data["source"],
-            target_block_id=edge_data["target"],
+            source_block_id=id_map.get(edge_data["source"], edge_data["source"]),
+            target_block_id=id_map.get(edge_data["target"], edge_data["target"]),
             source_handle=edge_data.get("source_handle"),
             target_handle=edge_data.get("target_handle"),
         )

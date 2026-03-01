@@ -480,6 +480,26 @@ function resolveAnomalies(
     return [];
   }
 
+  // Explicitly check for anomaly_scores binary array from the algorithm prompt
+  if (Array.isArray(validationResults.anomaly_scores)) {
+    const isBinary = validationResults.anomaly_scores.length > 0 && validationResults.anomaly_scores.every(v => v === 0 || v === 1);
+    if (isBinary || validationResults.anomaly_scores.length === seriesData.length) {
+      const resolved: NormalizedAnomaly[] = [];
+      const scores = validationResults.anomaly_scores as (number | boolean)[];
+      for (let i = 0; i < Math.min(scores.length, seriesData.length); i++) {
+        if (scores[i] === 1 || scores[i] === true || scores[i] === -1) { // some models use -1 for anomaly
+          resolved.push({
+            x: seriesData[i].x,
+            y: seriesData[i].value,
+            pointIndex: i,
+            score: typeof scores[i] === 'number' ? (scores[i] as number) : 1,
+          });
+        }
+      }
+      if (resolved.length > 0) return resolved;
+    }
+  }
+
   const rawAnomalyValues = [
     ...getValuesByKeys(validationResults, ANOMALY_KEYS),
     ...collectValuesByKeyPattern(validationResults, /anomal|outlier/i, 3),

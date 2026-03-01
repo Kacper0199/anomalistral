@@ -12,6 +12,7 @@ import { PanelError } from "@/components/error/PanelError";
 import { Header } from "@/components/layout/Header";
 import { SessionSkeleton } from "@/components/loading/SessionSkeleton";
 import { PipelineEditor } from "@/components/pipeline/PipelineEditor";
+import { BlockSettings } from "@/components/pipeline/BlockSettings";
 import { TemplateSelector } from "@/components/pipeline/TemplateSelector";
 import { AnomalyChart } from "@/components/results/AnomalyChart";
 import { CodeViewer } from "@/components/results/CodeViewer";
@@ -49,7 +50,6 @@ function getPayloadRecord(
 }
 
 function SessionInner({ sessionId }: { sessionId: string }) {
-  const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [blockResults, setBlockResults] = useState<Record<string, Record<string, unknown>>>({});
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const processedSeqRef = useRef(0);
@@ -65,6 +65,10 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   const clearStream = useStreamStore((s) => s.clear);
 
   const nodes = usePipelineStore((s) => s.nodes);
+  const activeChatBlockId = usePipelineStore((s) => s.activeChatBlockId);
+  const activeSettingsBlockId = usePipelineStore((s) => s.activeSettingsBlockId);
+  const setActiveChatBlockId = usePipelineStore((s) => s.setActiveChatBlockId);
+  const setActiveSettingsBlockId = usePipelineStore((s) => s.setActiveSettingsBlockId);
   const isModified = usePipelineStore((s) => s.isModified);
   const resetPipeline = usePipelineStore((s) => s.resetPipeline);
   const setNodeStatus = usePipelineStore((s) => s.setNodeStatus);
@@ -127,8 +131,8 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   );
 
   const handleBlockClose = useCallback(() => {
-    setActiveBlockId(null);
-  }, []);
+    setActiveChatBlockId(null);
+  }, [setActiveChatBlockId]);
 
   useEffect(() => {
     if (!isModified) return;
@@ -378,10 +382,10 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   }, [nodes, blockResults]);
 
   const activeBlockType = useMemo<BlockType | null>(() => {
-    if (!activeBlockId) return null;
-    const node = nodes.find((n) => n.id === activeBlockId);
+    if (!activeChatBlockId) return null;
+    const node = nodes.find((n) => n.id === activeChatBlockId);
     return node?.data.type ?? null;
-  }, [activeBlockId, nodes]);
+  }, [activeChatBlockId, nodes]);
 
   if (!currentSession) {
     return <SessionSkeleton />;
@@ -394,10 +398,10 @@ function SessionInner({ sessionId }: { sessionId: string }) {
 
         <section className="min-h-[340px] md:h-full">
           <ErrorBoundary key={sessionId} fallback={<PanelError message="Chat panel crashed" />}>
-            {activeBlockId && activeBlockType ? (
+            {activeChatBlockId && activeBlockType ? (
               <BlockChat
                 sessionId={sessionId}
-                blockId={activeBlockId}
+                blockId={activeChatBlockId}
                 blockType={activeBlockType}
                 onClose={handleBlockClose}
               />
@@ -462,6 +466,15 @@ function SessionInner({ sessionId }: { sessionId: string }) {
         </section>
 
       </main>
+
+      {activeSettingsBlockId && (
+        <BlockSettings
+          open={!!activeSettingsBlockId}
+          onClose={() => setActiveSettingsBlockId(null)}
+          blockId={activeSettingsBlockId}
+          sessionId={sessionId}
+        />
+      )}
     </div>
   );
 }

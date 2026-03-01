@@ -34,6 +34,8 @@ interface PipelineStore {
   sessionId: string | null;
   isModified: boolean;
   pipelineStatus: PipelineStatus;
+  activeChatBlockId: string | null;
+  activeSettingsBlockId: string | null;
   onNodesChange: OnNodesChange<PipelineFlowNode>;
   onEdgesChange: OnEdgesChange<Edge>;
   onConnect: OnConnect;
@@ -47,6 +49,8 @@ interface PipelineStore {
   removeEdge: (edgeId: string) => void;
   setPipelineStatus: (status: PipelineStatus) => void;
   setModified: (modified: boolean) => void;
+  setActiveChatBlockId: (id: string | null) => void;
+  setActiveSettingsBlockId: (id: string | null) => void;
   resetDownstream: (fromNodeId: string) => void;
 }
 
@@ -56,6 +60,8 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   sessionId: null,
   isModified: false,
   pipelineStatus: "idle",
+  activeChatBlockId: null,
+  activeSettingsBlockId: null,
 
   onNodesChange: (changes) =>
     set((state) => ({
@@ -168,6 +174,8 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   setPipelineStatus: (status) => set({ pipelineStatus: status }),
 
   setModified: (modified) => set({ isModified: modified }),
+  setActiveChatBlockId: (id) => set({ activeChatBlockId: id }),
+  setActiveSettingsBlockId: (id) => set({ activeSettingsBlockId: id }),
 
   resetDownstream: (fromNodeId) =>
     set((state) => {

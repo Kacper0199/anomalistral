@@ -5,7 +5,6 @@ import {
   Background,
   BackgroundVariant,
   ConnectionLineType,
-  Controls,
   ReactFlow,
   useReactFlow,
   type Edge,
@@ -21,9 +20,6 @@ import { PipelineNode } from "./PipelineNode";
 
 import "@xyflow/react/dist/style.css";
 
-interface PipelineEditorProps {
-  onBlockDoubleClick?: (blockId: string) => void;
-}
 
 const nodeTypes = {
   pipelineNode: PipelineNode,
@@ -49,7 +45,7 @@ const backgroundGap: [number, number] = [20, 20];
 
 const proOptions = { hideAttribution: true };
 
-function FlowCanvas({ onBlockDoubleClick }: PipelineEditorProps) {
+function FlowCanvas() {
   const { screenToFlowPosition } = useReactFlow();
   const nodes = usePipelineStore((s) => s.nodes);
   const edges = usePipelineStore((s) => s.edges);
@@ -60,9 +56,9 @@ function FlowCanvas({ onBlockDoubleClick }: PipelineEditorProps) {
 
   const handleNodeDoubleClick: NodeMouseHandler<PipelineFlowNode> = useCallback(
     (_event, node) => {
-      onBlockDoubleClick?.(node.id);
+      usePipelineStore.getState().setActiveSettingsBlockId(node.id);
     },
-    [onBlockDoubleClick]
+    []
   );
 
   const handleDragOver = useCallback((event: React.DragEvent) => {
@@ -117,13 +113,12 @@ function FlowCanvas({ onBlockDoubleClick }: PipelineEditorProps) {
             size={1}
             color="var(--border)"
           />
-          <Controls />
         </ReactFlow>
       </div>
     </div>
   );
 }
 
-export function PipelineEditor({ onBlockDoubleClick }: PipelineEditorProps) {
-  return <FlowCanvas onBlockDoubleClick={onBlockDoubleClick} />;
+export function PipelineEditor() {
+  return <FlowCanvas />;
 }

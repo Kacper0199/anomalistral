@@ -356,13 +356,14 @@ class DAGExecutor:
         session = await self._get_session()
 
         if block_type == "upload":
-            return {"dataset_path": session.dataset_path, "filename": session.dataset_filename}
+            return {"dataset_path": session.dataset_path, "filename": session.dataset_filename, "upload_cols": config.get("columns", [])}
 
         if block_type == "eda":
+            upload_cols = self._find_upstream_type(upstream_results, "upload_cols") or []
             return await self._execute_agent_block(
                 block_node=block_node,
                 agent_type="eda",
-                prompt=self._eda_prompt(session.user_prompt or "", session),
+                prompt=self._eda_prompt(session.user_prompt or "", session, upload_cols),
                 use_file=True,
                 session=session,
             )
@@ -375,10 +376,11 @@ class DAGExecutor:
 
         if block_type == "algorithm":
             eda_data = self._find_upstream_type(upstream_results, "eda_report")
+            upload_cols = self._find_upstream_type(upstream_results, "upload_cols") or []
             return await self._execute_agent_block(
                 block_node=block_node,
                 agent_type="algorithm",
-                prompt=self._algorithm_prompt(eda_data, config),
+                prompt=self._algorithm_prompt(eda_data, config, upload_cols),
                 use_file=True,
                 session=session,
             )
@@ -465,7 +467,11 @@ class DAGExecutor:
         try:
             path = Path(dataset_path)
             df = pd.read_csv(path) if path.suffix.lower() == ".csv" else pd.read_json(path)
-            numeric_cols = df.select_dtypes(include="number").columns.tolist()
+            cfg_cols = config.get("columns", [])
+            if cfg_cols:
+                numeric_cols = [c for c in cfg_cols if c in df.columns]
+            else:
+                numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
             if method == "min_max":
                 for col in numeric_cols:
@@ -503,11 +509,17 @@ class DAGExecutor:
             df = pd.read_csv(path) if path.suffix.lower() == ".csv" else pd.read_json(path)
             rows_before = df.isnull().any(axis=1).sum()
 
+            cfg_cols = config.get("columns", [])
+            if cfg_cols:
+                imp_cols = [c for c in cfg_cols if c in df.columns]
+            else:
+                imp_cols = df.select_dtypes(include="number").columns.tolist()
+
             if method == "median":
-                for col in df.select_dtypes(include="number").columns:
+                for col in imp_cols:
                     df[col] = df[col].fillna(df[col].median())
             elif method == "mean":
-                for col in df.select_dtypes(include="number").columns:
+                for col in imp_cols:
                     df[col] = df[col].fillna(df[col].mean())
             elif method == "mode":
                 for col in df.columns:
@@ -622,22 +634,27 @@ class DAGExecutor:
             raise RuntimeError(f"Session {self.session_id} not found")
         return session
 
-    def _eda_prompt(self, user_prompt: str, session: Any) -> str:
-        return (
+    def _eda_prompt(self, user_prompt: str, session: Any, upload_cols: list[str] = None) -> str:
+        prompt = (
             "Perform exploratory data analysis for this anomaly detection task. "
             f"User intent: {user_prompt}. "
             "The dataset file is attached via code_interpreter — load it with pandas from the sandbox. "
             "Return strict JSON with keys: row_count, column_count, summary, frequency, missing_values, "
             "trend, seasonality, stationarity, statistics, column_types, data_quality_flags, notes."
         )
+        if upload_cols:
+            prompt += f" Please restrict your analysis strictly to these columns: {', '.join(upload_cols)}."
+        return prompt
 
-    def _algorithm_prompt(self, eda_data: Any, config: dict) -> str:
+    def _algorithm_prompt(self, eda_data: Any, config: dict, upload_cols: list[str] = None) -> str:
         eda_json = json.dumps(eda_data) if isinstance(eda_data, dict) else str(eda_data)
         prompt = (
             "You are a Data Scientist. Write and execute Python code using the code_interpreter tool to detect anomalies in the uploaded dataset. "
             "You must output a strict JSON object with two keys: 'code' (the exact Python code you executed) and 'anomaly_scores' "
             f"(a list of 1s and 0s, where 1 is anomaly, matching the row count). EDA context: {eda_json}."
         )
+        if upload_cols:
+            prompt += f" Ensure your model ONLY uses these columns as features: {', '.join(upload_cols)}."
         if config.get("prompt_override"):
             prompt += f" User instructions: {config['prompt_override']}"
         return prompt

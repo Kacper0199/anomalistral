@@ -87,9 +87,10 @@ export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettin
   }
 
   const typeLabel = blockType ? (blockTypeLabels[blockType] ?? blockType) : "Block";
-  const showMethod = blockType === "algorithm" || blockType === "normalization" || blockType === "imputation";
-  const showColumns = blockType === "normalization" || blockType === "imputation";
+  const showMethod = blockType === "normalization" || blockType === "imputation";
+  const showColumns = blockType === "upload" || blockType === "normalization" || blockType === "imputation";
   const showWeights = blockType === "aggregator";
+  const showPrompt = blockType === "algorithm";
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -137,30 +138,21 @@ export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettin
             </div>
           )}
 
-          <Separator />
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="block-prompt" className="text-sm font-medium">Prompt Override</label>
-            <Textarea
-              id="block-prompt"
-              placeholder="Optional: override the agent system prompt for this block…"
-              value={promptOverride}
-              onChange={(e) => setPromptOverride(e.target.value)}
-              rows={3}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="block-params" className="text-sm font-medium">Extra Params (JSON)</label>
-            <Textarea
-              id="block-params"
-              placeholder="{}"
-              value={params}
-              onChange={(e) => setParams(e.target.value)}
-              rows={3}
-              className="font-mono text-xs"
-            />
-          </div>
+          {showPrompt && (
+            <>
+              <Separator />
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="block-prompt" className="text-sm font-medium">System Prompt Override</label>
+                <Textarea
+                  id="block-prompt"
+                  placeholder="Optional: custom instructions for the algorithm generation..."
+                  value={promptOverride}
+                  onChange={(e) => setPromptOverride(e.target.value)}
+                  rows={4}
+                />
+              </div>
+            </>
+          )}
         </div>
 
         <DialogFooter showCloseButton>
