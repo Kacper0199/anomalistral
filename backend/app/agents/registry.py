@@ -62,7 +62,7 @@ class AgentRegistry:
         if block_type == "eda":
             return self.settings.MISTRAL_DEFAULT_MODEL, [{"type": "code_interpreter"}], EDA_PROMPT
         if block_type == "algorithm":
-            return self.settings.MISTRAL_SMALL_MODEL, [], prompt_override or ALGORITHM_PROMPT
+            return self.settings.MISTRAL_DEFAULT_MODEL, [{"type": "code_interpreter"}], prompt_override or ALGORITHM_PROMPT
         if block_type == "codegen":
             return self.settings.MISTRAL_DEFAULT_MODEL, [{"type": "code_interpreter"}], CODEGEN_PROMPT
         return self.settings.MISTRAL_DEFAULT_MODEL, [], prompt_override or ORCHESTRATOR_PROMPT

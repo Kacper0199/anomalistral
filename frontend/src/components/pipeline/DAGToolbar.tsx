@@ -36,7 +36,34 @@ const blockPalette: { type: BlockType; label: string; Icon: React.ElementType }[
   { type: "anomaly_viz", label: "Anomaly Viz", Icon: BarChart3 },
 ];
 
-export function DAGToolbar({ sessionId }: DAGToolbarProps) {
+export function BlockPalette() {
+  function onDragStart(e: React.DragEvent, blockType: BlockType) {
+    e.dataTransfer.setData("application/anomalistral-block", blockType);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {blockPalette.map(({ type, label, Icon }) => (
+        <Tooltip key={type}>
+          <TooltipTrigger asChild>
+            <div
+              draggable
+              onDragStart={(e) => onDragStart(e, type)}
+              className="flex cursor-grab items-center gap-1.5 rounded-md border border-border/50 bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-muted/80 hover:text-foreground active:cursor-grabbing select-none"
+            >
+              <Icon className="size-3.5" />
+              <span className="hidden sm:inline">{label}</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{label}</TooltipContent>
+        </Tooltip>
+      ))}
+    </div>
+  );
+}
+
+export function PipelineControls({ sessionId }: DAGToolbarProps) {
   const pipelineStatus = usePipelineStore((s) => s.pipelineStatus);
   const isModified = usePipelineStore((s) => s.isModified);
   const toDAGDefinition = usePipelineStore((s) => s.toDAGDefinition);
@@ -48,11 +75,6 @@ export function DAGToolbar({ sessionId }: DAGToolbarProps) {
   const isPaused = pipelineStatus === "paused";
   const isCompleted = pipelineStatus === "completed";
   const isError = pipelineStatus === "error";
-
-  function onDragStart(e: React.DragEvent, blockType: BlockType) {
-    e.dataTransfer.setData("application/anomalistral-block", blockType);
-    e.dataTransfer.effectAllowed = "move";
-  }
 
   async function handleControl(action: "run" | "stop" | "pause" | "rerun") {
     if (!sessionId) return;
@@ -78,112 +100,95 @@ export function DAGToolbar({ sessionId }: DAGToolbarProps) {
     }
   }
 
+  return (
+    <div className="flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1.5 shadow-lg ring-1 ring-black/10 dark:ring-white/5">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
+            disabled={!isIdle && !isPaused}
+            onClick={() => handleControl("run")}
+          >
+            <Play className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{isPaused ? "Resume" : "Run"}</TooltipContent>
+      </Tooltip>
 
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+            disabled={!isRunning}
+            onClick={() => handleControl("pause")}
+          >
+            <Pause className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Pause</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="text-red-500 hover:text-red-400 hover:bg-red-500/10"
+            disabled={!isRunning && !isPaused}
+            onClick={() => handleControl("stop")}
+          >
+            <Square className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Stop</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+            disabled={!isCompleted && !isError}
+            onClick={() => handleControl("rerun")}
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Rerun</TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="mx-1 h-4" />
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="gap-1.5 rounded-full px-3 text-xs"
+            disabled={!isModified || saving || !sessionId}
+            onClick={handleSave}
+          >
+            <Save className="size-3.5" />
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Save DAG to backend</TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
+export function DAGToolbar({ sessionId }: DAGToolbarProps) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2 py-1.5 backdrop-blur">
-      <div className="flex items-center gap-1.5">
-        {blockPalette.map(({ type, label, Icon }) => (
-          <Tooltip key={type}>
-            <TooltipTrigger asChild>
-              <div
-                draggable
-                onDragStart={(e) => onDragStart(e, type)}
-                className="flex cursor-grab items-center gap-1.5 rounded-md border border-border/50 bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-muted/80 hover:text-foreground active:cursor-grabbing select-none"
-              >
-                <Icon className="size-3.5" />
-                <span className="hidden sm:inline">{label}</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{label}</TooltipContent>
-          </Tooltip>
-        ))}
-      </div>
-
+      <BlockPalette />
       <Separator orientation="vertical" className="h-6" />
-
-      <div className="flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
-              disabled={!isIdle && !isPaused}
-              onClick={() => handleControl("run")}
-            >
-              <Play className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{isPaused ? "Resume" : "Run"}</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
-              disabled={!isRunning}
-              onClick={() => handleControl("pause")}
-            >
-              <Pause className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Pause</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="text-red-500 hover:text-red-400 hover:bg-red-500/10"
-              disabled={!isRunning && !isPaused}
-              onClick={() => handleControl("stop")}
-            >
-              <Square className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Stop</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
-              disabled={!isCompleted && !isError}
-              onClick={() => handleControl("rerun")}
-            >
-              <RefreshCw className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Rerun</TooltipContent>
-        </Tooltip>
-      </div>
-
-      <Separator orientation="vertical" className="h-6" />
-
-      <div className="flex items-center gap-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1.5 text-xs"
-              disabled={!isModified || saving || !sessionId}
-              onClick={handleSave}
-            >
-              <Save className="size-3.5" />
-              {saving ? "Saving…" : "Save"}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Save DAG to backend</TooltipContent>
-        </Tooltip>
-
-
-      </div>
+      <PipelineControls sessionId={sessionId} />
     </div>
   );
 }

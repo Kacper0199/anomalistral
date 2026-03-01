@@ -302,7 +302,7 @@ class DAGExecutor:
                         continue
                     node = node_map[block_id]
                     upstream = self._collect_upstream(block_id, dag, block_results)
-                    task = asyncio.create_task(self._execute_block_safe(node, upstream))
+                    task = asyncio.create_task(self._execute_block_safe(node, upstream, block_results))
                     block_tasks.append((block_id, task))
 
                 for block_id, task in block_tasks:
@@ -329,11 +329,11 @@ class DAGExecutor:
                 upstream[edge.source] = block_results[edge.source]
         return upstream
 
-    async def _execute_block_safe(self, node: DAGNode, upstream_results: dict[str, Any]) -> dict[str, Any]:
+    async def _execute_block_safe(self, node: DAGNode, upstream_results: dict[str, Any], all_results: dict[str, Any]) -> dict[str, Any]:
         await self._update_block_status(node.id, "running")
         await self._publish("block.started", {"block_id": node.id, "block_type": node.block_type.value})
         try:
-            result = await self.execute_block(node, upstream_results)
+            result = await self.execute_block(node, upstream_results, all_results)
             await self._update_block_status(node.id, "success", result=result)
             await self._publish("block.completed", {
                 "block_id": node.id,
@@ -350,16 +350,19 @@ class DAGExecutor:
             })
             raise
 
-    async def execute_block(self, block_node: DAGNode, upstream_results: dict[str, Any]) -> dict[str, Any]:
+    async def execute_block(self, block_node: DAGNode, upstream_results: dict[str, Any], all_results: dict[str, Any] = None) -> dict[str, Any]:
         block_type = block_node.block_type.value
         config = block_node.config.model_dump() if block_node.config else {}
         session = await self._get_session()
+
+        if block_type in ("eda", "algorithm", "normalization", "imputation") and not session.dataset_path:
+            raise ValueError(f"Cannot execute {block_type}: No dataset uploaded.")
 
         if block_type == "upload":
             return {"dataset_path": session.dataset_path, "filename": session.dataset_filename, "upload_cols": config.get("columns", [])}
 
         if block_type == "eda":
-            upload_cols = self._find_upstream_type(upstream_results, "upload_cols") or []
+            upload_cols = self._find_upstream_type(all_results or upstream_results, "upload_cols") or []
             return await self._execute_agent_block(
                 block_node=block_node,
                 agent_type="eda",
@@ -375,8 +378,8 @@ class DAGExecutor:
             return await self._execute_imputation(block_node, config, upstream_results, session)
 
         if block_type == "algorithm":
-            eda_data = self._find_upstream_type(upstream_results, "eda_report")
-            upload_cols = self._find_upstream_type(upstream_results, "upload_cols") or []
+            eda_data = self._find_upstream_type(all_results or upstream_results, "eda_report")
+            upload_cols = self._find_upstream_type(all_results or upstream_results, "upload_cols") or []
             return await self._execute_agent_block(
                 block_node=block_node,
                 agent_type="algorithm",
