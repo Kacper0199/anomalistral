@@ -6,16 +6,14 @@ import {
   BackgroundVariant,
   ConnectionLineType,
   Controls,
-  MiniMap,
   ReactFlow,
-  ReactFlowProvider,
   useReactFlow,
   type Edge,
   type NodeMouseHandler,
 } from "@xyflow/react";
 
 import { usePipelineStore, type PipelineFlowNode } from "@/stores/pipelineStore";
-import type { BlockType, PipelineNodeData } from "@/types";
+import type { BlockType } from "@/types";
 
 import { DAGToolbar } from "./DAGToolbar";
 import { PipelineEdge } from "./PipelineEdge";
@@ -50,22 +48,6 @@ const snapGrid: [number, number] = [20, 20];
 const backgroundGap: [number, number] = [20, 20];
 
 const proOptions = { hideAttribution: true };
-
-function miniMapNodeColor(node: PipelineFlowNode): string {
-  const status = (node.data as PipelineNodeData).status;
-  switch (status) {
-    case "running":
-      return "#3b82f6";
-    case "success":
-      return "#10b981";
-    case "error":
-      return "#ef4444";
-    case "paused":
-      return "#f59e0b";
-    default:
-      return "#52525b";
-  }
-}
 
 function FlowCanvas({ onBlockDoubleClick }: PipelineEditorProps) {
   const { screenToFlowPosition } = useReactFlow();
@@ -136,12 +118,6 @@ function FlowCanvas({ onBlockDoubleClick }: PipelineEditorProps) {
             color="var(--border)"
           />
           <Controls />
-          <MiniMap<PipelineFlowNode>
-            nodeColor={miniMapNodeColor}
-            pannable
-            zoomable
-            className="!border-border/60 !bg-card/80"
-          />
         </ReactFlow>
       </div>
     </div>
@@ -149,9 +125,5 @@ function FlowCanvas({ onBlockDoubleClick }: PipelineEditorProps) {
 }
 
 export function PipelineEditor({ onBlockDoubleClick }: PipelineEditorProps) {
-  return (
-    <ReactFlowProvider>
-      <FlowCanvas onBlockDoubleClick={onBlockDoubleClick} />
-    </ReactFlowProvider>
-  );
+  return <FlowCanvas onBlockDoubleClick={onBlockDoubleClick} />;
 }

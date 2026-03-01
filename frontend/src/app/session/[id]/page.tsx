@@ -54,6 +54,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const processedSeqRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dagLoadedRef = useRef(false);
 
   const { currentSession, loadSession } = useSession();
   const setSession = useSessionStore((s) => s.setSession);
@@ -80,6 +81,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     processedSeqRef.current = 0;
+    dagLoadedRef.current = false;
   }, [sessionId]);
 
   useEffect(() => {
@@ -99,7 +101,8 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   }, [sessionId, resetPipeline]);
 
   useEffect(() => {
-    if (!currentSession) return;
+    if (!currentSession || dagLoadedRef.current) return;
+    dagLoadedRef.current = true;
     const hasDag = currentSession.dag_config !== null || currentSession.template_id !== null;
     if (!hasDag) {
       void Promise.resolve().then(() => setShowTemplateSelector(true));
