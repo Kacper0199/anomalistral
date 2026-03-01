@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback } from "react";
+
 import {
   createSession,
   getSession,
@@ -17,7 +19,7 @@ export function useSession() {
   const setLoading = useSessionStore((state) => state.setLoading);
   const addMessage = useSessionStore((state) => state.addMessage);
 
-  const createNewSession = async (prompt: string, file?: File): Promise<Session> => {
+  const createNewSession = useCallback(async (prompt: string, file?: File): Promise<Session> => {
     setLoading(true);
     try {
       const uploaded = file ? await uploadFile(file) : null;
@@ -49,9 +51,9 @@ export function useSession() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setLoading, setSession, addMessage]);
 
-  const loadSession = async (id: string): Promise<Session> => {
+  const loadSession = useCallback(async (id: string): Promise<Session> => {
     setLoading(true);
     try {
       const session = await getSession(id);
@@ -72,7 +74,7 @@ export function useSession() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setLoading, setSession]);
 
   return {
     currentSession,

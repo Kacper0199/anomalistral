@@ -355,6 +355,20 @@ export default function SessionPage() {
         continue;
       }
 
+      const phaseFailedMatch = event.type.match(/^(eda|algorithm|codegen|validation)\.failed$/);
+      if (phaseFailedMatch) {
+        const failedPhase = phaseFailedMatch[1] as PipelineNodeId;
+        setNodeStatus(failedPhase, "error");
+        const errorMessage = getPayloadString(event.payload, "error") ?? "Unknown error";
+        addMessage({
+          id: `${event.seq}`,
+          role: "system",
+          content: `${failedPhase.charAt(0).toUpperCase() + failedPhase.slice(1)} failed: ${errorMessage}`,
+          timestamp: event.ts,
+        });
+        continue;
+      }
+
       if (event.type === "chat.response") {
         const text = getPayloadString(event.payload, "text");
         if (!text) {

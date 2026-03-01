@@ -112,11 +112,33 @@ class PipelineExecutor:
         self.seq = 0
         self._current_phase = "init"
 
+    async def _run_phase(
+        self,
+        phase: str,
+        status_key: str,
+        agent_id: str,
+        prompt: str,
+        file_id: str | None = None,
+        timeout: float = 120.0,
+    ) -> str:
+        await self._set_status(status_key)
+        await self._publish(f"{phase}.started", {"session_id": self.session_id})
+        try:
+            raw, conversation_id = await asyncio.wait_for(
+                self._run_agent_phase(agent_id=agent_id, prompt=prompt, file_id=file_id),
+                timeout=timeout,
+            )
+            if phase == "eda" and conversation_id:
+                await self._update_session(conversation_id=conversation_id)
+            return raw
+        except Exception as exc:
+            await self._publish(f"{phase}.failed", {"error": self._error_message(exc)})
+            raise
+
     async def execute(self, user_prompt: str, dataset_path: str | None) -> None:
         try:
             self._current_phase = "init"
             await self._publish("pipeline.started", {"status": "started", "session_id": self.session_id})
-            await self._set_status("eda_running")
 
             file_id: str | None = None
             dataset_context = ""
@@ -127,48 +149,35 @@ class PipelineExecutor:
                     await self._update_session(mistral_file_id=file_id)
 
             self._current_phase = "eda"
-            await self._publish("eda.started", {"session_id": self.session_id})
-            eda_agent_id = self._agent_id(await self.registry.get_eda_agent())
-            eda_raw, conversation_id = await asyncio.wait_for(
-                self._run_agent_phase(
-                    agent_id=eda_agent_id,
-                    prompt=self._eda_prompt(user_prompt, dataset_context),
-                    file_id=file_id,
-                ),
-                timeout=120.0,
+            eda_raw = await self._run_phase(
+                phase="eda",
+                status_key="eda_running",
+                agent_id=self._agent_id(await self.registry.get_eda_agent()),
+                prompt=self._eda_prompt(user_prompt, dataset_context),
+                file_id=file_id,
             )
-            if conversation_id:
-                await self._update_session(conversation_id=conversation_id)
             eda_data = _sanitize_for_json(self._to_structured_payload(eda_raw))
             await self._update_session(eda_results=json.dumps(eda_data))
             await self._publish("eda.completed", {"results": eda_data})
 
             self._current_phase = "algorithm"
-            await self._set_status("algorithm_running")
-            await self._publish("algorithm.started", {"session_id": self.session_id})
-            algorithm_agent_id = self._agent_id(await self.registry.get_algorithm_agent())
-            algorithm_raw, _ = await asyncio.wait_for(
-                self._run_agent_phase(
-                    agent_id=algorithm_agent_id,
-                    prompt=self._algorithm_prompt(eda_data),
-                ),
-                timeout=120.0,
+            algorithm_raw = await self._run_phase(
+                phase="algorithm",
+                status_key="algorithm_running",
+                agent_id=self._agent_id(await self.registry.get_algorithm_agent()),
+                prompt=self._algorithm_prompt(eda_data),
             )
             algorithm_data = self._to_structured_payload(algorithm_raw)
             await self._update_session(algorithm_recommendations=json.dumps(algorithm_data))
             await self._publish("algorithm.completed", {"recommendations": algorithm_data})
 
             self._current_phase = "codegen"
-            await self._set_status("codegen_running")
-            await self._publish("codegen.started", {"session_id": self.session_id})
-            code_agent_id = self._agent_id(await self.registry.get_code_agent())
-            code_output, _ = await asyncio.wait_for(
-                self._run_agent_phase(
-                    agent_id=code_agent_id,
-                    prompt=self._code_prompt(eda_data, algorithm_data, dataset_context),
-                    file_id=file_id,
-                ),
-                timeout=120.0,
+            code_output = await self._run_phase(
+                phase="codegen",
+                status_key="codegen_running",
+                agent_id=self._agent_id(await self.registry.get_code_agent()),
+                prompt=self._code_prompt(eda_data, algorithm_data, dataset_context),
+                file_id=file_id,
             )
             code_output = _extract_code_block(code_output)
             await self._update_session(generated_code=code_output)
@@ -176,25 +185,15 @@ class PipelineExecutor:
             await self._publish("codegen.completed", {"size": len(code_output), "code": code_output})
 
             self._current_phase = "validation"
-            await self._set_status("validation_running")
-            await self._publish("validation.started", {"session_id": self.session_id})
-            validation_agent_id = self._agent_id(await self.registry.get_validation_agent())
-            validation_raw, _ = await asyncio.wait_for(
-                self._run_agent_phase(
-                    agent_id=validation_agent_id,
-                    prompt=self._validation_prompt(code_output, dataset_context),
-                    file_id=file_id,
-                ),
-                timeout=120.0,
+            validation_raw = await self._run_phase(
+                phase="validation",
+                status_key="validation_running",
+                agent_id=self._agent_id(await self.registry.get_validation_agent()),
+                prompt=self._validation_prompt(code_output, dataset_context),
+                file_id=file_id,
             )
             validation_data = _sanitize_for_json(self._to_structured_payload(validation_raw))
-            # Ensure status is NOT validation_running anymore before publishing completion
-            # This prevents a race where loadSession(sessionId) on frontend returns 'validation_running'
-            # after receiving 'validation.completed' event.
-            await self._update_session(
-                validation_results=json.dumps(validation_data),
-                status="completed" 
-            )
+            await self._update_session(validation_results=json.dumps(validation_data), status="completed")
             await self._publish("validation.completed", {"validation": validation_data})
 
             self._current_phase = "complete"
@@ -232,6 +231,7 @@ class PipelineExecutor:
             self.client.beta.conversations.start,
             agent_id=agent_id,
             inputs=inputs,
+            timeout_ms=90_000,
         )
         return self._extract_conversation_text(response), self._conversation_id(response)
 
