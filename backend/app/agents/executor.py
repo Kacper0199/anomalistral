@@ -175,11 +175,16 @@ class PipelineExecutor:
                 timeout=120.0,
             )
             validation_data = self._to_structured_payload(validation_raw)
-            await self._update_session(validation_results=json.dumps(validation_data))
+            # Ensure status is NOT validation_running anymore before publishing completion
+            # This prevents a race where loadSession(sessionId) on frontend returns 'validation_running'
+            # after receiving 'validation.completed' event.
+            await self._update_session(
+                validation_results=json.dumps(validation_data),
+                status="completed" 
+            )
             await self._publish("validation.completed", {"validation": validation_data})
 
             self._current_phase = "complete"
-            await self._set_status("completed")
             await self._publish("pipeline.completed", {"status": "completed", "session_id": self.session_id})
         except Exception as exc:
             message = self._error_message(exc)
