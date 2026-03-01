@@ -112,7 +112,7 @@ function resolveExtraColumns(records: AnomalyRecord[]): string[] {
       if (!known.has(k)) cols.add(k);
     }
   }
-  return [...cols].slice(0, 6);
+  return [...cols].slice(0, 20);
 }
 
 export function AnomalyChart({ validationResults }: AnomalyChartProps) {

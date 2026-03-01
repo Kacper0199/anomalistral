@@ -11,6 +11,7 @@ import {
   Play,
   RefreshCw,
   Save,
+  Search,
   Square,
   Upload,
 } from "lucide-react";
@@ -29,6 +30,7 @@ interface DAGToolbarProps {
 
 const blockPalette: { type: BlockType; label: string; Icon: React.ElementType }[] = [
   { type: "upload", label: "Upload", Icon: Upload },
+  { type: "eda", label: "EDA", Icon: Search },
   { type: "normalization", label: "Normalize", Icon: Layers },
   { type: "imputation", label: "Impute", Icon: PenTool },
   { type: "algorithm", label: "Algorithm", Icon: Bot },

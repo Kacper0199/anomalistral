@@ -281,7 +281,7 @@ export function EDAReport({ results: rawResults }: EDAReportProps) {
   if (!results) {
     return (
       <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-        Waiting for EDA analysis...
+        Select EDA block and run pipeline to see dataset statistics.
       </div>
     );
   }

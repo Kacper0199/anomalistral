@@ -38,6 +38,11 @@ export function useSession() {
         });
       }
 
+      // Send the user prompt directly to the orchestrator agent as the first chat message
+      if (prompt.trim()) {
+        await sendCommand(session.id, "chat", { message: prompt.trim() });
+      }
+
       await startPipeline(session.id);
 
       addMessage({

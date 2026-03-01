@@ -413,17 +413,21 @@ function SessionInner({ sessionId }: { sessionId: string }) {
         </section>
 
         <section className="flex min-h-[420px] flex-col rounded-xl border border-border/80 bg-card/30 p-3">
-          <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
-            <h2 className="text-sm font-medium tracking-wide text-muted-foreground shrink-0">Pipeline DAG</h2>
-            <BlockPalette />
-            <span className="ml-auto text-xs text-muted-foreground shrink-0">
-              Stream: {isConnected ? "connected" : "reconnecting"}
-            </span>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 px-1">
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-medium tracking-wide text-muted-foreground shrink-0">Pipeline DAG</h2>
+              <BlockPalette />
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground shrink-0">
+                Stream: {isConnected ? "connected" : "reconnecting"}
+              </span>
+              <div className="rounded-md bg-background/50 backdrop-blur">
+                <PipelineControls sessionId={sessionId} />
+              </div>
+            </div>
           </div>
           <div className="relative min-h-0 flex-1">
-            <div className="absolute right-3 top-3 z-10">
-              <PipelineControls sessionId={sessionId} />
-            </div>
             <ErrorBoundary fallback={<PanelError message="Pipeline view unavailable" />}>
               {showTemplateSelector ? (
                 <TemplateSelector sessionId={sessionId} onApply={handleTemplateApply} />

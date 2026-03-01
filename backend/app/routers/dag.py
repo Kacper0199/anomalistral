@@ -324,6 +324,24 @@ async def control_pipeline(
 
     registry = _get_registry(client)
 
+    async def _notify_orchestrator(dag: DAGDefinition) -> None:
+        async with AsyncSessionLocal() as bg_db:
+            try:
+                from app.routers.sessions import _run_chat_command, _run_new_chat
+                session = await _get_session_or_404(bg_db, session_id)
+                parts = ["The user has just started the pipeline with the following configuration:"]
+                for node in dag.nodes:
+                    conf = json.dumps(node.config.model_dump()) if node.config else "default"
+                    parts.append(f"- Block: {node.block_type.value} | ID: {node.id[:8]} | Config: {conf}")
+                msg = "\n".join(parts)
+                
+                if session.conversation_id:
+                    await _run_chat_command(session_id, session.conversation_id, msg, client, stream_manager)
+                else:
+                    await _run_new_chat(session_id, msg, client, stream_manager)
+            except Exception:
+                logger.exception("Failed to notify orchestrator about pipeline start")
+
     async def _run(from_block_id: str | None = None) -> None:
         async with AsyncSessionLocal() as bg_db:
             executor = DAGExecutor(
@@ -336,6 +354,10 @@ async def control_pipeline(
             _running_executors[session_id] = executor
             try:
                 dag = await _load_dag_from_db(bg_db, session_id)
+                
+                # Notify orchestrator asynchronously
+                background_tasks.add_task(_notify_orchestrator, dag)
+                
                 await executor.execute_dag(dag, from_block_id=from_block_id)
             except Exception:
                 logger.exception("DAG execution failed", extra={"session_id": session_id})

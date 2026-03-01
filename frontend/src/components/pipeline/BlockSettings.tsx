@@ -48,25 +48,32 @@ const METHOD_OPTIONS: Record<string, { value: string; label: string }[]> = {
 
 export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettingsProps) {
   const nodes = usePipelineStore((s) => s.nodes);
+  const edges = usePipelineStore((s) => s.edges);
   const setNodeData = usePipelineStore((s) => s.setNodeData);
   const node = blockId ? nodes.find((n) => n.id === blockId) ?? null : null;
   const blockType = node?.data.type ?? null;
 
   const [method, setMethod] = useState("");
   const [columns, setColumns] = useState("");
-  const [weights, setWeights] = useState("");
+  const [weightsObj, setWeightsObj] = useState<Record<string, number>>({});
   const [promptOverride, setPromptOverride] = useState("");
   const [params, setParams] = useState("");
   const [saving, setSaving] = useState(false);
 
   const existingConfig = node?.data.config;
+  const incomingEdges = blockType === "aggregator" && blockId 
+    ? edges.filter((e) => e.target === blockId) 
+    : [];
+  const incomingNodes = incomingEdges
+    .map((e) => nodes.find((n) => n.id === e.source))
+    .filter((n) => n !== undefined);
 
   useEffect(() => {
     if (!open) return;
     const cfg = existingConfig;
     setMethod(cfg?.method ?? "");
     setColumns(cfg?.columns?.join(", ") ?? "");
-    setWeights(cfg?.weights ? JSON.stringify(cfg.weights, null, 2) : "");
+    setWeightsObj(cfg?.weights ?? {});
     setPromptOverride(cfg?.prompt_override ?? "");
     setParams(cfg?.params ? JSON.stringify(cfg.params, null, 2) : "");
   }, [open, blockId, existingConfig]);
@@ -76,8 +83,8 @@ export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettin
     setSaving(true);
     try {
       let parsedWeights: Record<string, number> | undefined;
-      if (weights.trim()) {
-        parsedWeights = JSON.parse(weights) as Record<string, number>;
+      if (blockType === "aggregator") {
+        parsedWeights = Object.keys(weightsObj).length > 0 ? weightsObj : undefined;
       }
       let parsedParams: Record<string, unknown> | undefined;
       if (params.trim()) {
@@ -146,16 +153,38 @@ export function BlockSettings({ open, onClose, blockId, sessionId }: BlockSettin
           )}
 
           {showWeights && (
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="block-weights" className="text-sm font-medium">Weights (JSON)</label>
-              <Textarea
-                id="block-weights"
-                placeholder='{"iforest": 0.6, "lof": 0.4}'
-                value={weights}
-                onChange={(e) => setWeights(e.target.value)}
-                rows={3}
-                className="font-mono text-xs"
-              />
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Inputs Weights</label>
+              {incomingNodes.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Connect algorithm blocks to set weights.</p>
+              ) : (
+                incomingNodes.map((n, i) => (
+                  <div key={n.id} className="flex items-center gap-2">
+                    <span className="text-xs w-20 truncate" title={n.data.label}>Input {i + 1} ({n.data.label})</span>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="1"
+                      className="h-8"
+                      value={weightsObj[n.id] ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                        setWeightsObj((prev) => {
+                          const next = { ...prev };
+                          if (val === undefined || isNaN(val)) {
+                            delete next[n.id];
+                          } else {
+                            next[n.id] = val;
+                          }
+                          return next;
+                        });
+                      }}
+                      placeholder="e.g. 0.5"
+                    />
+                  </div>
+                ))
+              )}
             </div>
           )}
 

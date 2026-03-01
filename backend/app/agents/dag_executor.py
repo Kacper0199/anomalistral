@@ -380,22 +380,56 @@ class DAGExecutor:
         if block_type == "algorithm":
             eda_data = self._find_upstream_type(all_results or upstream_results, "eda_report")
             upload_cols = self._find_upstream_type(all_results or upstream_results, "upload_cols") or []
-            return await self._execute_agent_block(
+            res = await self._execute_agent_block(
                 block_node=block_node,
                 agent_type="algorithm",
                 prompt=self._algorithm_prompt(eda_data, config, upload_cols),
                 use_file=True,
                 session=session,
             )
+            return self._enrich_with_anomalies(res, session.dataset_path)
 
         if block_type == "aggregator":
-            return await self._execute_aggregator(block_node, config, upstream_results)
+            res = await self._execute_aggregator(block_node, config, upstream_results)
+            return self._enrich_with_anomalies(res, session.dataset_path)
 
         if block_type == "anomaly_viz":
             scores = self._find_upstream_type(upstream_results, "anomaly_scores")
             return {"visualization_ready": True, "anomaly_scores": scores}
 
         raise ValueError(f"Unknown block type: {block_type}")
+
+    def _enrich_with_anomalies(self, result: dict[str, Any], dataset_path: str | None) -> dict[str, Any]:
+        if not dataset_path or "anomaly_scores" not in result:
+            return result
+        
+        scores = result["anomaly_scores"]
+        if not isinstance(scores, list):
+            return result
+            
+        try:
+            import pandas as pd
+            df = pd.read_csv(dataset_path)
+            if len(df) != len(scores):
+                return result
+                
+            df["_score_"] = scores
+            anomalies_df = df[df["_score_"].isin([1, 1.0, True, "1", "1.0", "true"])]
+            
+            anomalies_df = anomalies_df.head(100)
+            anomalies_df = anomalies_df.drop(columns=["_score_"])
+            
+            records = []
+            for idx, row in anomalies_df.iterrows():
+                record = {"index": idx, "score": 1}
+                record.update(row.to_dict())
+                records.append(record)
+                
+            result["detected_anomalies"] = records
+        except Exception:
+            pass
+            
+        return result
 
     def _find_upstream_type(self, upstream_results: dict[str, Any], key: str) -> Any:
         for result in upstream_results.values():
@@ -546,8 +580,8 @@ class DAGExecutor:
         config: dict[str, Any],
         upstream_results: dict[str, Any],
     ) -> dict[str, Any]:
-        method = config.get("method", "majority_vote")
         weights: dict[str, float] = config.get("weights") or {}
+        method = config.get("method", "weighted_average" if weights else "majority_vote")
 
         score_sets: list[tuple[str, list[Any]]] = []
         for source_id, result in upstream_results.items():
@@ -557,7 +591,7 @@ class DAGExecutor:
                     score_sets.append((source_id, scores if isinstance(scores, list) else [scores]))
 
         if not score_sets:
-            return {"method": method, "aggregated_scores": [], "source_count": 0}
+            return {"method": method, "anomaly_scores": [], "source_count": 0}
 
         min_len = min(len(s) for _, s in score_sets)
         aggregated: list[Any] = []
@@ -572,9 +606,12 @@ class DAGExecutor:
                 weighted_sum = sum(
                     weights.get(sid, 1.0) * float(s[i]) for sid, s in score_sets
                 )
-                aggregated.append(weighted_sum / total_weight if total_weight > 0 else 0.0)
+                if total_weight > 0:
+                    aggregated.append(1 if (weighted_sum / total_weight) > 0.5 else 0)
+                else:
+                    aggregated.append(0)
 
-        return {"method": method, "aggregated_scores": aggregated, "source_count": len(score_sets)}
+        return {"method": method, "anomaly_scores": aggregated, "source_count": len(score_sets)}
 
     def stop(self) -> None:
         self._cancelled = True

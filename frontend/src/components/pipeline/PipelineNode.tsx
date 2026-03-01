@@ -11,7 +11,6 @@ import {
   Bot,
   GitMerge,
   Layers,
-  MessageSquare,
   PenTool,
   Search,
   Settings,
@@ -135,11 +134,6 @@ export function PipelineNode({ id, data }: NodeProps<PipelineFlowNode>) {
     usePipelineStore.getState().setActiveSettingsBlockId(id);
   }
 
-  function handleChat(e: React.MouseEvent) {
-    e.stopPropagation();
-    usePipelineStore.getState().setActiveChatBlockId(id);
-  }
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -156,16 +150,6 @@ export function PipelineNode({ id, data }: NodeProps<PipelineFlowNode>) {
 
           {hovered && (
             <div className="absolute -top-3 right-2 flex items-center gap-1">
-              {data.type === "algorithm" && (
-                <button
-                  type="button"
-                  onClick={handleChat}
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-card border border-border/60 text-muted-foreground hover:text-foreground shadow-sm transition-colors"
-                  title="Chat with Algorithm Agent"
-                >
-                  <MessageSquare className="size-3" />
-                </button>
-              )}
               {["upload", "normalization", "imputation", "algorithm", "aggregator"].includes(data.type) && (
                 <button
                   type="button"
