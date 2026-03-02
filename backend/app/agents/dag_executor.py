@@ -719,12 +719,17 @@ class DAGExecutor:
     def _algorithm_prompt(self, eda_data: Any, config: dict, upload_cols: list[str] | None = None) -> str:
         eda_json = json.dumps(eda_data) if isinstance(eda_data, dict) else str(eda_data)
         prompt = (
-            "You are a Data Scientist. Write and execute Python code using the code_interpreter tool to detect anomalies in the uploaded dataset. "
-            "You must output a strict JSON object with two keys: 'code' (the exact Python code you executed) and 'anomaly_scores' "
-            f"(a list of 1s and 0s, where 1 is anomaly, matching the row count). EDA context: {eda_json}."
+            "You are a Data Scientist. Use the `code_interpreter` tool to analyze the dataset and detect anomalies. "
+            "CRITICAL INSTRUCTION: Your final response MUST be a single, strict JSON block and absolutely NOTHING else. "
+            "DO NOT include any conversational text like 'Here is the result' or 'The code executed successfully'. "
+            "The JSON MUST have exactly two keys: "
+            "1. 'code': The exact Python code you executed. "
+            "2. 'anomaly_scores': A list of integers (1 for anomaly, 0 for normal), matching the EXACT row count of the dataset. "
+            "DO NOT truncate the `anomaly_scores` list, print all elements.\n\n"
+            f"EDA context: {eda_json}."
         )
         if upload_cols:
-            prompt += f" Ensure your model ONLY uses these columns as features: {', '.join(upload_cols)}."
+            prompt += f"\nEnsure your model ONLY uses these columns as features: {', '.join(upload_cols)}."
         if config.get("prompt_override"):
-            prompt += f" User instructions: {config['prompt_override']}"
+            prompt += f"\nUser instructions: {config['prompt_override']}"
         return prompt
