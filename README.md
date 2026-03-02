@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <em>Transform natural language descriptions into production-ready anomaly detection pipelines — zero ML expertise required.</em>
+  <em>Transform natural language descriptions into production-ready anomaly detection pipelines.</em>
 </p>
 
 ---
