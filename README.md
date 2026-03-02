@@ -1,19 +1,12 @@
-<p align="center">
-  <h1 align="center">🌌 Anomalistral</h1>
-  <p align="center"><strong>Autonomous Agentic MLOps Platform for Time-Series Anomaly Detection</strong></p>
-</p>
+# 🌌 Anomalistral
 
-<p align="center">
-  <a href="https://mistral.ai"><img src="https://img.shields.io/badge/Mistral-Hackathon_2026-blueviolet?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIGZpbGw9IndoaXRlIi8+PC9zdmc+" alt="Mistral Hackathon 2026"/></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License: MIT"/></a>
-  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Frontend-Next.js_15-black?style=for-the-badge&logo=nextdotjs" alt="Next.js 15"/></a>
-  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi" alt="FastAPI"/></a>
-  <a href="https://reactflow.dev/"><img src="https://img.shields.io/badge/DAG-React_Flow_12-ff0072?style=for-the-badge" alt="React Flow 12"/></a>
-</p>
+[![Mistral Hackathon 2026](https://img.shields.io/badge/Mistral-Hackathon_2026-blueviolet?style=for-the-badge&logo=mistralai)](https://mistral.ai)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![Stack: Next.js 15](https://img.shields.io/badge/Frontend-Next.js_15-black?style=for-the-badge&logo=nextdotjs)](https://nextjs.org/)
+[![Stack: FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![Stack: React Flow 12](https://img.shields.io/badge/DAG-React_Flow_12-ff0072?style=for-the-badge)](https://reactflow.dev/)
 
-<p align="center">
-  <em>Transform natural language descriptions into production-ready anomaly detection pipelines.</em>
-</p>
+Transform natural language descriptions into production-ready anomaly detection pipelines.</em>
 
 ---
 
