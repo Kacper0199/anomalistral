@@ -26,47 +26,42 @@ Built in **48 hours** for the **Mistral AI Hackathon 2026**.
 ## 📸 Screenshots
 
 ### Default Pipeline — Basic Anomaly Detection
-> Linear DAG: Upload → EDA → Normalization → Algorithm → Anomaly Visualization
+> A complete linear anomaly detection workflow (Upload → EDA → Normalization → Algorithm → Anomaly Visualization). The image shows the real-time execution in progress with live status badges.
 
 ![Default Pipeline](docs/screenshots/default-pipeline.png)
 
 ### Chat Panel + EDA Results
-> Orchestrator chat on the left, EDA statistical analysis tab on the right
+> The Orchestrator chat on the left guides the user through the process, while the right panel displays comprehensive statistical analysis and data distributions extracted by the EDA agent.
 
 ![Chat and EDA](docs/screenshots/chat-and-eda.png)
 
 ### Code Tab — Generated Python Code
-> Production-ready anomaly detection code generated and executed by Mistral agents
+> The exact, production-ready Python script autonomously generated and executed by the Mistral code-interpreter agent, complete with syntax highlighting and available for download.
 
 ![Code Tab](docs/screenshots/code-tab.png)
 
 ### Anomalies Tab — Detected Anomalies
-> Anomaly detection results with data rows flagged as anomalous
+> A detailed data table presenting the detected anomaly rows seamlessly enriched with the original dataset's context and columns for easy review.
 
 ![Anomalies Tab](docs/screenshots/anomalies-tab.png)
 
-### Anomalies Tab — Detected Anomalies
-> Block edition and deletion buttons
+### Node Interactions — Block Edition & Deletion
+> Hovering over a DAG node reveals intuitive quick-action buttons for configuration and removal, making pipeline restructuring effortless.
 
 ![Block Edition and Deletion Buttons](docs/screenshots/block-edition-deletion-buttons.png)
 
 ### Multi-Algorithm Ensemble Pipeline
-> Two algorithm blocks running in parallel, feeding into an Aggregator block
+> A complex DAG architecture where multiple anomaly detection algorithms run concurrently in parallel, feeding their independent results into an Aggregator block for a combined consensus.
 
 ![Multi-Algorithm Pipeline](docs/screenshots/multi-algorithm-pipeline.png)
 
-### Block Configuration — Normalization
-> Selecting normalization method and choosing which columns to process
-
-![Normalize Block Config](docs/screenshots/config-normalize.png)
-
 ### Block Configuration — Aggregator
-> Configuring aggregation method and per-algorithm weight assignments
+> The ensemble configuration interface where users can define the aggregation strategy (e.g., weighted average) and assign custom influence weights to each input algorithm.
 
 ![Aggregator Block Config](docs/screenshots/config-aggregator.png)
 
 ### Block Configuration — Algorithm
-> Editing the algorithm block's custom prompt override
+> Advanced settings for the Algorithm block, empowering users to override the default instructions and explicitly steer the Mistral agent's detection logic using natural language prompts.
 
 ![Algorithm Block Config](docs/screenshots/config-algorithm.png)
 
