@@ -7,10 +7,8 @@ import {
   GitMerge,
   Layers,
   PenTool,
-  Pause,
-  Play,
-  RefreshCw,
-  Save,
+    Play,
+    Save,
   Search,
   Square,
   Upload,
@@ -72,13 +70,9 @@ export function PipelineControls({ sessionId }: DAGToolbarProps) {
   const setModified = usePipelineStore((s) => s.setModified);
   const [saving, setSaving] = useState(false);
 
-  const isIdle = pipelineStatus === "idle";
   const isRunning = pipelineStatus === "running";
-  const isPaused = pipelineStatus === "paused";
-  const isCompleted = pipelineStatus === "completed";
-  const isError = pipelineStatus === "error";
 
-  async function handleControl(action: "run" | "stop" | "pause" | "rerun") {
+  async function handleControl(action: "run" | "stop") {
     if (!sessionId) return;
     try {
       await controlPipeline(sessionId, { action });
@@ -110,28 +104,13 @@ export function PipelineControls({ sessionId }: DAGToolbarProps) {
             size="icon-sm"
             variant="ghost"
             className="text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
-            disabled={!isIdle && !isPaused}
+            disabled={isRunning}
             onClick={() => handleControl("run")}
           >
             <Play className="size-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">{isPaused ? "Resume" : "Run"}</TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
-            disabled={!isRunning}
-            onClick={() => handleControl("pause")}
-          >
-            <Pause className="size-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">Pause</TooltipContent>
+        <TooltipContent side="bottom">Run</TooltipContent>
       </Tooltip>
 
       <Tooltip>
@@ -140,28 +119,13 @@ export function PipelineControls({ sessionId }: DAGToolbarProps) {
             size="icon-sm"
             variant="ghost"
             className="text-red-500 hover:text-red-400 hover:bg-red-500/10"
-            disabled={!isRunning && !isPaused}
+            disabled={!isRunning}
             onClick={() => handleControl("stop")}
           >
             <Square className="size-4" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">Stop</TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
-            disabled={!isCompleted && !isError}
-            onClick={() => handleControl("rerun")}
-          >
-            <RefreshCw className="size-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">Rerun</TooltipContent>
       </Tooltip>
 
       <Separator orientation="vertical" className="mx-1 h-4" />

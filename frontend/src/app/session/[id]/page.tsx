@@ -356,11 +356,16 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     for (const node of nodes) {
       const result = blockResults[node.id];
       if (!result) continue;
-      const code = typeof result["code"] === "string"
+      let code = typeof result["code"] === "string"
         ? result["code"]
         : typeof result["generated_code"] === "string"
         ? result["generated_code"]
         : null;
+      
+      if (!code && typeof result["raw"] === "string" && (node.data.type === "algorithm" || node.data.type === "codegen")) {
+        code = result["raw"];
+      }
+
       if (code) {
         entries.push({ blockId: node.id, blockType: node.data.type, label: node.data.label, code });
       }

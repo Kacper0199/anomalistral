@@ -182,13 +182,17 @@ function ShikiStyle() {
 
 function MultiTabView({ entries }: { entries: CodeEntry[] }) {
   const [activeTab, setActiveTab] = useState(entries[0].blockId);
-  const active = entries.find((e) => e.blockId === activeTab) ?? entries[0];
+  
+  // Ensure activeTab is valid, otherwise fallback to the first entry
+  const isValid = entries.some(e => e.blockId === activeTab);
+  const currentTab = isValid ? activeTab : entries[0].blockId;
+  const active = entries.find((e) => e.blockId === currentTab) ?? entries[0];
   const cleanCode = extractCodeBlock(active.code);
   const downloadName = `${active.label.replace(/\s+/g, "_")}_anomaly_detector.py`;
 
   return (
     <div className="space-y-3">
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={currentTab} onValueChange={setActiveTab}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <TabsList>
             {entries.map((entry) => (

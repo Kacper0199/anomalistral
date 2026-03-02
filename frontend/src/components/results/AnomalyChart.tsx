@@ -47,20 +47,7 @@ function extractAnomalyRecords(
 ): { records: AnomalyRecord[]; summaryText: string | null } {
   if (!validationResults) return { records: [], summaryText: null };
 
-  const scores = validationResults["anomaly_scores"];
-  if (Array.isArray(scores) && scores.length > 0) {
-    const records: AnomalyRecord[] = [];
-    (scores as unknown[]).forEach((s, i) => {
-      const numeric = toFinite(s);
-      const isAnomaly = numeric === 1 || numeric === -1 || s === true;
-      if (isAnomaly) {
-        records.push({ index: i, score: numeric ?? String(s) });
-      }
-    });
-    if (records.length > 0) return { records, summaryText: null };
-  }
-
-  const rawAnomalies =
+    const rawAnomalies =
     validationResults["anomalies"] ??
     validationResults["detected_anomalies"] ??
     validationResults["anomaly_points"] ??
@@ -90,7 +77,20 @@ function extractAnomalyRecords(
       const idx = toFinite(entry) ?? i;
       return { index: idx, score: "anomaly" };
     });
-    return { records, summaryText: null };
+    if (records.length > 0) return { records, summaryText: null };
+  }
+
+  const scores = validationResults["anomaly_scores"];
+  if (Array.isArray(scores) && scores.length > 0) {
+    const records: AnomalyRecord[] = [];
+    (scores as unknown[]).forEach((s, i) => {
+      const numeric = toFinite(s);
+      const isAnomaly = numeric === 1 || numeric === -1 || s === true;
+      if (isAnomaly) {
+        records.push({ index: i, score: numeric ?? String(s) });
+      }
+    });
+    if (records.length > 0) return { records, summaryText: null };
   }
 
   const summaryKeys = ["summary", "message", "report", "text", "description"];

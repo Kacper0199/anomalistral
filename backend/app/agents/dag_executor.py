@@ -416,7 +416,13 @@ class DAGExecutor:
 
         if block_type == "anomaly_viz":
             scores = self._find_upstream_type(upstream_results, "anomaly_scores")
-            return {"visualization_ready": True, "anomaly_scores": scores}
+            anomalies = self._find_upstream_type(upstream_results, "detected_anomalies")
+            res = {"visualization_ready": True, "anomaly_scores": scores}
+            if anomalies:
+                res["detected_anomalies"] = anomalies
+            else:
+                res = self._enrich_with_anomalies(res, session.dataset_path)
+            return res
 
         raise ValueError(f"Unknown block type: {block_type}")
 
