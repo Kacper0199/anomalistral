@@ -408,6 +408,21 @@ class DAGExecutor:
                 use_file=True,
                 session=session,
             )
+            
+            if "anomaly_indices" in res and "anomaly_scores" not in res and session.dataset_path:
+                try:
+                    import pandas as pd
+                    df = pd.read_csv(session.dataset_path)
+                    length = len(df)
+                    scores = [0] * length
+                    for idx in res.get("anomaly_indices", []):
+                        if isinstance(idx, int) and 0 <= idx < length:
+                            scores[idx] = 1
+                    res["anomaly_scores"] = scores
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(f"Failed to reconstruct anomaly_scores: {e}")
+
             return self._enrich_with_anomalies(res, session.dataset_path)
 
         if block_type == "aggregator":
@@ -724,8 +739,8 @@ class DAGExecutor:
             "DO NOT include any conversational text like 'Here is the result' or 'The code executed successfully'. "
             "The JSON MUST have exactly two keys: "
             "1. 'code': The exact Python code you executed. "
-            "2. 'anomaly_scores': A list of integers (1 for anomaly, 0 for normal), matching the EXACT row count of the dataset. "
-            "DO NOT truncate the `anomaly_scores` list, print all elements.\n\n"
+            "2. 'anomaly_indices': A list of integers representing the row indices (0-indexed) where anomalies were detected. "
+            "DO NOT output the full array of 0s and 1s. Only output the indices of the anomalies.\n\n"
             f"EDA context: {eda_json}."
         )
         if upload_cols:
