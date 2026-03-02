@@ -8,8 +8,7 @@ FastAPI-based backend powering the Anomalistral agentic MLOps platform.
 - **SQLAlchemy 2.0 + aiosqlite** — Async SQLite ORM for sessions, blocks, edges, events
 - **Mistral AI SDK** — Agent creation (`beta.agents.create`), conversation execution (`beta.conversations.start`), file upload (`files.upload`)
 - **sse-starlette** — Server-Sent Events with per-subscriber broadcast queues
-- **Pandas / NumPy** — Local data preprocessing (normalization, imputation, anomaly enrichment)
-- **Pandera** — Dataset schema validation on upload
+- **Pandas / NumPy** — Local data preprocessing and dataset validation on upload
 
 ## Quick Start
 
@@ -25,36 +24,6 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 The database is auto-seeded with block definitions and pipeline templates on first startup.
-
-## Structure
-
-```
-app/
-├── agents/
-│   ├── dag_executor.py     # DAG topological sort, block execution, Mistral integration
-│   ├── registry.py         # AgentRegistry — per-block agent creation & caching
-│   └── prompts/            # System prompts: orchestrator, eda, algorithm, codegen
-├── db/
-│   ├── seed.py             # Block definitions + pipeline templates seeder
-│   └── session.py          # Async SQLite engine & session factory
-├── models/
-│   ├── database.py         # SQLAlchemy ORM models
-│   └── schemas.py          # Pydantic request/response schemas
-├── routers/
-│   ├── dag.py              # DAG CRUD, block/edge management, pipeline control
-│   ├── sessions.py         # Session lifecycle, orchestrator chat
-│   ├── stream.py           # SSE event streaming
-│   ├── templates.py        # Pipeline templates
-│   ├── uploads.py          # File upload
-│   └── pipelines.py        # Legacy pipeline start endpoint
-├── services/
-│   ├── streaming.py        # StreamManager (pub/sub SSE broadcast)
-│   ├── retry.py            # Exponential backoff for Mistral SDK calls
-│   └── file_handler.py     # Upload storage & validation
-├── config.py               # Pydantic Settings (env-based)
-├── deps.py                 # FastAPI dependency providers
-└── main.py                 # App entrypoint (lifespan, CORS, routers)
-```
 
 ## Environment Variables
 

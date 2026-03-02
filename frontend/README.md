@@ -27,37 +27,6 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Structure
-
-```
-src/
-├── app/
-│   ├── layout.tsx                  # Root layout with ThemeProvider
-│   ├── page.tsx                    # Landing page (session creation + dataset upload)
-│   └── session/[id]/page.tsx       # Main workspace (DAG + Chat + Results)
-├── components/
-│   ├── chat/                       # ChatPanel (orchestrator), BlockChat (per-block)
-│   ├── pipeline/                   # PipelineEditor, PipelineNode, BlockSettings, DAGToolbar, TemplateSelector
-│   ├── results/                    # EDAReport, CodeViewer, AnomalyChart
-│   ├── error/                      # ErrorBoundary, PanelError
-│   ├── layout/                     # Header
-│   ├── loading/                    # Skeleton loaders
-│   ├── providers/                  # ThemeProvider (next-themes)
-│   └── ui/                         # shadcn/ui primitives
-├── hooks/
-│   ├── useSSE.ts                   # SSE connection manager with reconnection
-│   └── useSession.ts              # Session data fetching & hydration
-├── stores/
-│   ├── pipelineStore.ts           # DAG nodes/edges state synced with React Flow
-│   ├── sessionStore.ts            # Session data, chat messages, loading states
-│   └── streamStore.ts             # SSE connection status, event buffer (last 500)
-├── lib/
-│   ├── api.ts                     # Typed API client (fetch wrapper)
-│   └── utils.ts                   # Tailwind merge utility
-└── types/
-    └── index.ts                   # Shared TypeScript type definitions
-```
-
 ## Key Pages
 
 | Route | Description |

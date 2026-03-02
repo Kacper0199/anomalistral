@@ -135,13 +135,21 @@ graph TD
    - **Anomalies**: Detected anomaly rows enriched with original data columns
    - **Chat**: Ongoing conversation with the orchestrator agent
 
-### Key Technical Decisions
+---
 
-- **`conversations.start` for all agent execution** — Not `agents.complete` which returns tool_call intent without executing code
-- **Sparse `anomaly_indices` instead of full score arrays** — Requesting only indices of anomalous rows prevents LLM token truncation on large datasets
-- **Per-subscriber SSE broadcast queues** — Each connected client gets its own `asyncio.Queue` to prevent event-stealing between multiple browser tabs
-- **Decoupled SSE generators from async DB sessions** — Events are fetched before entering the SSE generator to prevent `CancelledError` on client disconnect from tearing down the `aiosqlite` connection pool
-- **Dataset uploaded once, reused across blocks** — The Mistral `file_id` is cached on the session after the first upload
+## 🗄️ Database Schema
+
+Anomalistral uses an asynchronous SQLite database (`aiosqlite`) via SQLAlchemy 2.0. The schema is designed to efficiently track execution state, DAG structures, and real-time streaming events:
+
+| Table | Description |
+| :--- | :--- |
+| **`sessions`** | The core entity representing an analysis workspace. Tracks session metadata, global pipeline status, user prompts, and the cached dataset file path / Mistral API `file_id`. |
+| **`session_blocks`** | Represents individual DAG nodes (e.g., Upload, EDA, Algorithm). Stores block types, geometric coordinates for the UI, dynamic JSON configurations, and live execution statuses/results. |
+| **`session_edges`** | Defines the directional connections (dependencies) between blocks. Critical for computing the topological sort and layer-based parallelism. |
+| **`block_messages`** | Stores the entire multi-turn chat history specifically scoped to individual block-agents. |
+| **`events`** | An append-only ledger recording all state changes (e.g., `block.started`, `pipeline.completed`). Crucial for reliably broadcasting and replaying Server-Sent Events (SSE) to frontend clients on reconnect. |
+| **`block_definitions`** | Static definitions of available blocks, including input/output types, colors, icons, and default system prompts. |
+| **`pipeline_templates`** | Contains predefined DAG layouts (like "Basic Anomaly Detection" or "Multi-Algorithm Ensemble") that users can clone instantly into a new active session. |
 
 ---
 
@@ -169,8 +177,7 @@ The DAG executor enforces **type compatibility** between connected blocks — ed
 | **AI Integration** | Mistral Files API | Dataset upload with `purpose="code_interpreter"`, `ToolFileChunk` attachment |
 | **Backend Framework** | FastAPI | Async REST API with dependency injection |
 | **Database** | SQLAlchemy 2.0 + aiosqlite (Async SQLite) | Sessions, blocks, edges, events, templates, messages |
-| **Data Processing** | Pandas, NumPy | Local normalization, imputation, anomaly enrichment |
-| **Data Validation** | Pandera | Schema validation for uploaded datasets |
+| **Data Processing & Validation** | Pandas, NumPy | Local normalization, imputation, anomaly enrichment, and basic schema checks |
 | **Streaming** | sse-starlette | Server-Sent Events with per-subscriber broadcast |
 | **Retry Logic** | Custom `retry_sync` wrapper | Exponential backoff for Mistral API rate limits |
 | **Frontend Framework** | Next.js 15 (App Router) + React 19 | SSR-ready SPA with file-based routing |
@@ -190,85 +197,125 @@ The DAG executor enforces **type compatibility** between connected blocks — ed
 
 ```
 anomalistral/
-├── backend/
-│   ├── app/
-│   │   ├── agents/
-│   │   │   ├── dag_executor.py        # DAG topological sort, block execution, Mistral integration
-│   │   │   ├── registry.py            # Agent creation & caching (AgentRegistry)
-│   │   │   └── prompts/
-│   │   │       ├── algorithm.py       # Algorithm agent system prompt
-│   │   │       ├── codegen.py         # Code generation agent prompt
-│   │   │       ├── eda.py             # EDA agent system prompt (strict JSON output)
-│   │   │       └── orchestrator.py    # Orchestrator chat agent prompt
-│   │   ├── db/
-│   │   │   ├── seed.py                # Block definitions + pipeline templates seeder
-│   │   │   └── session.py             # Async SQLite engine & session factory
-│   │   ├── models/
-│   │   │   ├── database.py            # SQLAlchemy ORM models (Session, SessionBlock, Event, ...)
-│   │   │   └── schemas.py             # Pydantic request/response schemas
-│   │   ├── routers/
-│   │   │   ├── dag.py                 # DAG CRUD, block/edge management, pipeline control
-│   │   │   ├── pipelines.py           # Legacy pipeline start endpoint
-│   │   │   ├── sessions.py            # Session lifecycle, chat commands
-│   │   │   ├── stream.py              # SSE event streaming endpoint
-│   │   │   ├── templates.py           # Pipeline template listing
-│   │   │   └── uploads.py             # File upload (CSV/JSON)
-│   │   ├── services/
-│   │   │   ├── file_handler.py        # Upload storage & validation
-│   │   │   ├── retry.py               # Exponential backoff wrapper for Mistral SDK
-│   │   │   └── streaming.py           # StreamManager (pub/sub SSE broadcast)
-│   │   ├── config.py                  # Pydantic Settings (env-based configuration)
-│   │   ├── deps.py                    # FastAPI dependency providers
-│   │   └── main.py                    # App entrypoint (lifespan, CORS, routers)
-│   ├── .env.example
-│   ├── Dockerfile                     # Multi-stage Python 3.12 build
-│   ├── railway.toml                   # Railway deployment config
-│   └── requirements.txt
-│
-├── frontend/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx             # Root layout with ThemeProvider
-│   │   │   ├── page.tsx               # Landing page (session creation)
-│   │   │   └── session/[id]/
-│   │   │       └── page.tsx           # Main workspace (DAG + Chat + Results)
-│   │   ├── components/
-│   │   │   ├── chat/
-│   │   │   │   ├── BlockChat.tsx      # Per-block agent chat interface
-│   │   │   │   └── ChatPanel.tsx      # Orchestrator chat with markdown rendering
-│   │   │   ├── pipeline/
-│   │   │   │   ├── BlockSettings.tsx   # Dynamic block configuration dialog
-│   │   │   │   ├── DAGToolbar.tsx      # Run/Stop/Rerun pipeline controls
-│   │   │   │   ├── PipelineEditor.tsx  # React Flow canvas with drag-and-drop
-│   │   │   │   ├── PipelineNode.tsx    # Custom DAG node with status indicators
-│   │   │   │   └── TemplateSelector.tsx# Template picker dropdown
-│   │   │   ├── results/
-│   │   │   │   ├── AnomalyChart.tsx   # Anomaly results data table
-│   │   │   │   ├── CodeViewer.tsx     # Multi-tab code display with Shiki
-│   │   │   │   └── EDAReport.tsx      # Statistical analysis visualization
-│   │   │   ├── error/                 # ErrorBoundary, PanelError
-│   │   │   ├── layout/                # Header component
-│   │   │   ├── loading/               # Skeleton loaders (Session, Pipeline, Results)
-│   │   │   ├── providers/             # ThemeProvider (next-themes)
-│   │   │   └── ui/                    # shadcn/ui primitives
-│   │   ├── hooks/
-│   │   │   ├── useSSE.ts             # SSE connection manager with reconnection
-│   │   │   └── useSession.ts         # Session data fetching & hydration
-│   │   ├── stores/
-│   │   │   ├── pipelineStore.ts      # DAG nodes/edges state (React Flow sync)
-│   │   │   ├── sessionStore.ts       # Session data, messages, loading states
-│   │   │   └── streamStore.ts        # SSE connection status, event buffer
-│   │   ├── lib/
-│   │   │   ├── api.ts                # Typed API client (fetch wrapper)
-│   │   │   └── utils.ts              # Tailwind merge utility
-│   │   └── types/
-│   │       └── index.ts              # Shared TypeScript definitions
-│   ├── vercel.json                    # Vercel deployment config
-│   ├── next.config.ts
-│   └── package.json
-│
-├── sample_data*.csv                   # Example datasets for testing
-└── README.md
+└── kacper0199-anomalistral/
+    ├── README.md
+    ├── backend/
+    │   ├── README.md
+    │   ├── Dockerfile
+    │   ├── railway.toml
+    │   ├── requirements.txt
+    │   ├── .dockerignore
+    │   ├── .env.example
+    │   └── app/
+    │       ├── __init__.py
+    │       ├── config.py
+    │       ├── deps.py
+    │       ├── main.py
+    │       ├── agents/
+    │       │   ├── __init__.py
+    │       │   ├── dag_executor.py
+    │       │   ├── registry.py
+    │       │   └── prompts/
+    │       │       ├── __init__.py
+    │       │       ├── algorithm.py
+    │       │       ├── codegen.py
+    │       │       ├── eda.py
+    │       │       └── orchestrator.py
+    │       ├── data/
+    │       │   └── test_timeseries.csv
+    │       ├── db/
+    │       │   ├── __init__.py
+    │       │   ├── seed.py
+    │       │   └── session.py
+    │       ├── models/
+    │       │   ├── __init__.py
+    │       │   ├── database.py
+    │       │   └── schemas.py
+    │       ├── routers/
+    │       │   ├── __init__.py
+    │       │   ├── dag.py
+    │       │   ├── pipelines.py
+    │       │   ├── sessions.py
+    │       │   ├── stream.py
+    │       │   ├── templates.py
+    │       │   └── uploads.py
+    │       └── services/
+    │           ├── __init__.py
+    │           ├── file_handler.py
+    │           ├── retry.py
+    │           └── streaming.py
+    └── frontend/
+        ├── README.md
+        ├── components.json
+        ├── eslint.config.mjs
+        ├── next.config.ts
+        ├── package.json
+        ├── postcss.config.mjs
+        ├── tsconfig.json
+        ├── vercel.json
+        └── src/
+            ├── app/
+            │   ├── globals.css
+            │   ├── layout.tsx
+            │   ├── not-found.tsx
+            │   ├── page.tsx
+            │   └── session/
+            │       └── [id]/
+            │           └── page.tsx
+            ├── components/
+            │   ├── chat/
+            │   │   ├── BlockChat.tsx
+            │   │   └── ChatPanel.tsx
+            │   ├── error/
+            │   │   ├── ErrorBoundary.tsx
+            │   │   └── PanelError.tsx
+            │   ├── layout/
+            │   │   └── Header.tsx
+            │   ├── loading/
+            │   │   ├── PipelineSkeleton.tsx
+            │   │   ├── ResultsSkeleton.tsx
+            │   │   └── SessionSkeleton.tsx
+            │   ├── pipeline/
+            │   │   ├── BlockSettings.tsx
+            │   │   ├── DAGToolbar.tsx
+            │   │   ├── PipelineEdge.tsx
+            │   │   ├── PipelineEditor.tsx
+            │   │   ├── PipelineNode.tsx
+            │   │   └── TemplateSelector.tsx
+            │   ├── providers/
+            │   │   └── ClientProviders.tsx
+            │   ├── results/
+            │   │   ├── AnomalyChart.tsx
+            │   │   ├── CodeViewer.tsx
+            │   │   └── EDAReport.tsx
+            │   └── ui/
+            │       ├── badge.tsx
+            │       ├── button.tsx
+            │       ├── card.tsx
+            │       ├── dialog.tsx
+            │       ├── dropdown-menu.tsx
+            │       ├── input.tsx
+            │       ├── progress.tsx
+            │       ├── scroll-area.tsx
+            │       ├── separator.tsx
+            │       ├── skeleton.tsx
+            │       ├── sonner.tsx
+            │       ├── table.tsx
+            │       ├── tabs.tsx
+            │       ├── textarea.tsx
+            │       └── tooltip.tsx
+            ├── hooks/
+            │   ├── useSession.ts
+            │   └── useSSE.ts
+            ├── lib/
+            │   ├── api.ts
+            │   └── utils.ts
+            ├── stores/
+            │   ├── pipelineStore.ts
+            │   ├── sessionStore.ts
+            │   └── streamStore.ts
+            └── types/
+                └── index.ts
 ```
 
 ---
@@ -304,7 +351,7 @@ anomalistral/
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/sessions/{id}/pipeline/control` | Control pipeline: `run`, `stop`, `pause`, `rerun`, `continue_from` |
+| `POST` | `/api/sessions/{id}/pipeline/control` | Control pipeline execution (actions: `run`, `stop`) |
 | `POST` | `/api/sessions/{id}/apply-template` | Apply a pre-built pipeline template to the session |
 
 ### Templates & Uploads
@@ -324,12 +371,14 @@ anomalistral/
 ### SSE Event Types
 
 ```
-pipeline.started    pipeline.completed    pipeline.failed    pipeline.cancelled
-block.started       block.completed       block.failed       block.status
-block.agent.message
-chat.response
-command.chat        command.cancel        command.modify      command.approve
+pipeline.started    pipeline.completed    pipeline.failed       pipeline.cancelled
+block.started       block.completed       block.failed          block.status
+block.agent.message chat.response
+command.chat        command.cancel        command.modify        command.approve
 dag.validated
+eda.started         eda.completed         eda.failed
+algorithm.started   algorithm.completed   algorithm.failed
+codegen.started     codegen.completed     codegen.failed
 ```
 
 ---
@@ -464,5 +513,5 @@ Anomalistral demonstrates how autonomous AI agents can bridge the gap between co
 ---
 
 <p align="center">
-  <sub>Built with ❤️ using Mistral AI · Next.js · FastAPI · React Flow</sub>
+  <sub>Built with Mistral AI · Next.js · FastAPI · React Flow</sub>
 </p>
