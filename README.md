@@ -197,7 +197,7 @@ The DAG executor enforces **type compatibility** between connected blocks — ed
 
 ```
 anomalistral/
-└── kacper0199-anomalistral/
+    ├──
     ├── README.md
     ├── backend/
     │   ├── README.md
