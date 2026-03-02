@@ -32,6 +32,7 @@ from app.models.schemas import (
 from app.services.streaming import stream_manager
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["dag"])
+_bg_tasks = set()
 logger = logging.getLogger(__name__)
 
 _running_executors: dict[str, DAGExecutor] = {}
@@ -332,7 +333,9 @@ async def control_pipeline(
                 parts = ["The user has just started the pipeline with the following configuration:"]
                 for node in dag.nodes:
                     conf = json.dumps(node.config.model_dump()) if node.config else "default"
-                    parts.append(f"- Block: {node.block_type.value} | ID: {node.id[:8]} | Config: {conf}")
+                    # Omit raw Block ID to keep it conversational
+                    parts.append(f"- Block: {node.block_type.value} | Config: {conf}")
+                parts.append("\nJust describe the pipeline, do not ask if you should proceed. If you have answers, just provide them.")
                 msg = "\n".join(parts)
                 
                 if session.conversation_id:
@@ -355,19 +358,33 @@ async def control_pipeline(
             try:
                 dag = await _load_dag_from_db(bg_db, session_id)
                 
-                # Notify orchestrator asynchronously
-                background_tasks.add_task(_notify_orchestrator, dag)
+                # Notify orchestrator asynchronously using asyncio.create_task
+                task = asyncio.create_task(_notify_orchestrator(dag))
+                _bg_tasks.add(task)
+                task.add_done_callback(_bg_tasks.discard)
                 
                 await executor.execute_dag(dag, from_block_id=from_block_id)
             except Exception:
                 logger.exception("DAG execution failed", extra={"session_id": session_id})
             finally:
-                _running_executors.pop(session_id, None)
+                # Only pop if this executor is still the active one
+                if _running_executors.get(session_id) is executor:
+                    _running_executors.pop(session_id, None)
 
     if body.action in (PipelineAction.RUN, PipelineAction.RERUN):
-        background_tasks.add_task(_run, None)
+        old_executor = _running_executors.get(session_id)
+        if old_executor:
+            old_executor.stop()
+        task = asyncio.create_task(_run(None))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
     elif body.action == PipelineAction.CONTINUE_FROM:
-        background_tasks.add_task(_run, body.from_block_id)
+        old_executor = _running_executors.get(session_id)
+        if old_executor:
+            old_executor.stop()
+        task = asyncio.create_task(_run(body.from_block_id))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
 
     return {"status": "accepted", "action": body.action.value}
 

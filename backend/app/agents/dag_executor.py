@@ -305,17 +305,30 @@ class DAGExecutor:
                     task = asyncio.create_task(self._execute_block_safe(node, upstream, block_results))
                     block_tasks.append((block_id, task))
 
-                for block_id, task in block_tasks:
-                    try:
-                        result = await task
-                        block_results[block_id] = result
-                    except Exception as exc:
-                        block_results[block_id] = {"error": str(exc)}
+                try:
+                    results = await asyncio.gather(*(t for _, t in block_tasks), return_exceptions=True)
+                    for (block_id, _), res in zip(block_tasks, results):
+                        if isinstance(res, asyncio.CancelledError):
+                            raise res
+                        elif isinstance(res, BaseException):
+                            block_results[block_id] = {"error": str(res)}
+                        else:
+                            block_results[block_id] = res
+                except asyncio.CancelledError:
+                    for _, task in block_tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*(t for _, t in block_tasks), return_exceptions=True)
+                    raise
 
             if self._cancelled:
                 await self._publish("pipeline.cancelled", {"session_id": self.session_id})
             else:
                 await self._publish("pipeline.completed", {"session_id": self.session_id, "status": "completed"})
+        except asyncio.CancelledError:
+            self._cancelled = True
+            await self._publish("pipeline.cancelled", {"session_id": self.session_id})
+            raise
         except Exception as exc:
             await self._publish("pipeline.failed", {"session_id": self.session_id, "error": str(exc)})
             raise
@@ -341,6 +354,14 @@ class DAGExecutor:
                 "result": _sanitize_for_json(result),
             })
             return result
+        except asyncio.CancelledError:
+            await self._update_block_status(node.id, "error", error="Cancelled")
+            await self._publish("block.failed", {
+                "block_id": node.id,
+                "block_type": node.block_type.value,
+                "error": "Cancelled",
+            })
+            raise
         except Exception as exc:
             await self._update_block_status(node.id, "error", error=str(exc))
             await self._publish("block.failed", {
